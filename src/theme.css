@@ -1,0 +1,35 @@
+/* ARI: Graphite with a restrained teal accent. */
+:root {
+  color-scheme: light;
+  --ari-bg: #f1f1ef;
+  --ari-surface: #fdfdfb;
+  --ari-subtle: #e6e6e2;
+  --ari-text: #323638;
+  --ari-muted: #696d6c;
+  --ari-border: #d1d3cf;
+  --ari-accent: #176b76;
+  --ari-accent-hover: #10515a;
+  --ari-accent-soft: #e4e8e6;
+  --ari-action: #4d585a;
+  --ari-action-hover: #333e40;
+  --ari-on-accent: #ffffff;
+  --ari-focus: var(--ari-accent);
+  --ari-lamp-light: #e4b550;
+  --ari-secondary: #596a74;
+  --ari-sidebar: #292f31;
+  --ari-sidebar-active: #484f51;
+  --ari-sidebar-text: #f6f6f1;
+  --ari-sidebar-muted: color-mix(in srgb, var(--ari-sidebar-text) 76%, var(--ari-sidebar));
+  --ari-sidebar-border: color-mix(in srgb, var(--ari-sidebar-text) 30%, var(--ari-sidebar));
+  --ari-success: #3d7054;
+  --ari-success-soft: #e6efe7;
+  --ari-danger: #a13c35;
+  --ari-danger-soft: #fbece8;
+  --ari-overlay: #111b24cc;
+  --ari-photo-bg: #17282f;
+  --ari-user-bubble: color-mix(in srgb, var(--ari-secondary) 9%, var(--ari-surface));
+  --ari-shadow: 0 3px 12px color-mix(in srgb, var(--ari-text) 5%, transparent);
+  --ari-radius: 6px;
+  --ari-control-height: 36px;
+  --ari-control-compact: 30px;
+}

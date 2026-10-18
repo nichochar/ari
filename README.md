@@ -1,16 +1,28 @@
 ![Ari](public/ari-logo.svg)
 
-A personal AI tutor for any subject. Build a learning path, work through lessons and exercises, and ask questions as you go. Use pen and paper with a document camera, upload photos, or type your answers. Ari offers hints, grades your work, and remembers what you are learning.
+Learn stuff with pen and paper + an AI tutor.
+
+Using pen and paper to actually solving problems is a very effective way for me to learn. It might be for you as well, and if so you might like Ari.
+
+I recommend setting up a camera above your page, I have [this one, it works great](https://www.amazon.com/dp/B079DLTG9F).
 
 ![Ari running on a laptop beside a document camera and handwritten maths and physics work](docs/images/setup.jpg)
 
-My everyday setup: Ari, pen and paper, and an [IPEVO V4K USB document camera](https://www.amazon.com/dp/B079DLTG9F). It’s the camera I use and recommend for working on paper.
+You can then chat with Ari about what you want to learn and it will create a curriculum for you with exercises to work through.
+
+You can ask questions while you work and when you're done, just ask it to grade your work. It can always see what you are writing.
+
+I've had great success doing math and physics this way!
+
+Ari runs locally right now, which allows you to use your codex subscription. I've been using that with Astra (today Anthropic doesn't let you use your subscription for non-official clients).
+
+I recommend just pointing your AI to this repo and ask it to set it all up for you.
+
+![Ari running locally](public/ari-screenshot.png)
 
 ## Run locally
 
-Already using Ari? See [upgrading an existing installation](CONTRIBUTING.md#local-data) to keep your configuration and learning history.
-
-You need **Node.js 24+**, Git, and a **ChatGPT account with Codex access**. This is a single-user local app; macOS is tested. The built-in camera bridge is Mac-only, while browser cameras and photo uploads do not need it.
+You need Node.js 24+, git, ffmpeg, and a chatGPT account. The built-in camera bridge is Mac-only, while browser cameras and photo uploads do not need it.
 
 ```sh
 git clone https://github.com/nichochar/ari.git
@@ -20,7 +32,7 @@ npm install -g @openai/codex@0.163.0
 codex -c 'cli_auth_credentials_store="file"' login
 ```
 
-Complete **Sign in with ChatGPT** in your browser. Ari uses that local Codex login and your plan's Codex allowance—no API key needed. File-based login lets Ari reuse the session; never share `~/.codex/auth.json`. [Official sign-in instructions](https://learn.chatgpt.com/docs/auth).
+Complete sign in with chatGPT in your browser. Ari uses that local Codex login and your subscription's allowance, no API key needed.
 
 ```sh
 cp .env.example .env
@@ -28,15 +40,19 @@ npm run build
 npm start
 ```
 
-Open **http://127.0.0.1:3001**. Stop with Ctrl+C. Models are configurable in `.env`; your account must have access to the selected models. Ari reports unavailable models rather than silently switching. For a custom Codex installation, set `CODEX_BIN` to its executable path.
+Open **http://127.0.0.1:3001**.
+
+Models are configurable in `.env`; your account must have access to the selected models.
 
 ## Make it yours
 
-1. Open **Talk with Ari** and describe what you want to learn, your starting level, and your goals. For example: “Teach me photography from scratch, in 20-minute sessions.”
-2. Discuss the proposed outline, then choose **Create lesson** or **Create curriculum**. Separate interests get separate learning paths; later lessons are prepared as you reach them.
-3. Use the **Study desk** to practise. Ask for hints or feedback, add pages for longer work, and grade when ready. Save a reflection to help Ari adapt.
+1. Open **Talk with Ari** and describe what you want to learn. For example: “Teach me photography from scratch, in 20-minute sessions.”
+2. Discuss the proposed outline, then choose **Create lesson** or **Create curriculum**.
+3. Use the **Study desk** to practice. Chat through anything as needed, and grade when ready. Save a reflection to help Ari adapt.
 
-New learners start with a brief conversation. Tell Ari how you like to learn; change those preferences in chat or in **Settings → Your tutor / About you**. A mathematics and physics course is included as an example—you can start a different subject immediately. A camera is optional; choose **Use browser camera** or upload photos. The optional Mac IPEVO V4K bridge needs `ffmpeg`.
+New learners start with a brief conversation.
+
+I used a TUTOR.md for Ari's personality and a USER.md for how it learns about you. These evolve automatically but you can edit them directly or by chatting with Ari.
 
 Want to try onboarding without resetting your progress? Run `npm run onboarding` for a separate fresh learner on port 3002. Stop that preview with `PORT=3002 npm run stop`.
 
@@ -50,6 +66,6 @@ Live camera preview stays local; deliberately submitted work and relevant learni
 
 Personalization backups also include a matching `.workspace` directory with `TUTOR.md`, `USER.md`, memories and the workspace identity marker. To restore, stop Ari and restore the SQLite file, its `.codex` companion when present, and its `.workspace` contents to their original locations. The workspace location is saved in the database; preserve its identity marker. If backup reports that notes differ from recorded revisions, open Settings to refresh those edits and retry.
 
-For development: `npm run dev` (UI on port 5173), `npm test`, and `npm run build`. Technical notes: [contributing](CONTRIBUTING.md).
+For development: `npm run dev` (UI on port 5173), `npm test`, and `npm run build`.
 
 [MIT license](LICENSE).

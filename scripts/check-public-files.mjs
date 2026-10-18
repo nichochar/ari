@@ -10,9 +10,9 @@ function git(...args) {
 function privatePath(path) {
   const parts = path.toLowerCase().split('/');
   const name = parts.at(-1);
-  return parts.some(part => ['.local', '.codex', 'backups', 'uploads', 'screenshots', 'node_modules', 'dist'].includes(part) || part.endsWith('.codex'))
+  return parts.some(part => ['.local', '.codex', '.ari', 'memories', 'backups', 'uploads', 'screenshots', 'node_modules', 'dist'].includes(part) || part.endsWith('.codex') || part.endsWith('.workspace'))
     || (name.startsWith('.env') && name !== '.env.example')
-    || ['auth.json', 'chatgpt-auth.json', '.npmrc', '.netrc', 'user.md', 'memory.md', 'plan.md'].includes(name)
+    || ['auth.json', 'chatgpt-auth.json', '.npmrc', '.netrc', 'user.md', 'tutor.md', 'memory.md', 'plan.md', '.ari-workspace.json'].includes(name)
     || /\.(?:sqlite.*|db(?:-.*)?|jsonl|pem|key|log|bundle)$/.test(name)
     || /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/.test(name);
 }

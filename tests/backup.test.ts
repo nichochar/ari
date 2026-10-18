@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { after, test } from 'node:test';
 
 const directories: string[] = [];
@@ -18,14 +20,30 @@ function fixture() {
   db.prepare('INSERT INTO snapshots VALUES (?)').run(photo);
   return { dir, path, db, photo, out: join(dir, 'backups') };
 }
-function run(f: ReturnType<typeof fixture>) {
+function run(f: ReturnType<typeof fixture>, environment: Record<string, string> = {}) {
   return spawnSync(process.execPath, [resolve('scripts/backup.mjs')], {
-    encoding: 'utf8', env: { ...process.env, ARI_DB_PATH: f.path, ARI_BACKUP_DIR: f.out }, timeout: 15_000,
+    encoding: 'utf8', env: { ...process.env, ARI_DB_PATH: f.path, ARI_BACKUP_DIR: f.out, ...environment }, timeout: 15_000,
   });
 }
 function databaseValue(path: string, query: string) {
   const db = new DatabaseSync(path, { readOnly: true });
   try { return db.prepare(query).get(); } finally { db.close(); }
+}
+
+function personalizationFixture(f: ReturnType<typeof fixture>) {
+  const rootPath = join(realpathSync(f.dir), 'personalization');
+  const workspaceId = 'synthetic-workspace';
+  mkdirSync(join(rootPath, 'memories', 'observations'), { recursive: true });
+  writeFileSync(join(rootPath, '.ari-workspace.json'), JSON.stringify({ workspaceId }) + '\n');
+  f.db.exec('CREATE TABLE personalization_metadata (learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE personalization_revisions (learner_id TEXT, path TEXT, revision INTEGER, payload TEXT)');
+  f.db.prepare('INSERT INTO personalization_metadata VALUES (?, ?)').run('local', JSON.stringify({ rootPath, workspaceId, migrated: true, onboarding: { status: 'complete', updatedAt: '2026-10-18T12:00:00.000Z' } }));
+  const contents: Record<string, string> = { 'TUTOR.md': '# Tutor\nAsk one question.\n', 'USER.md': '# Learner\nGoal: botany.\n', 'memories/observations/leaves.md': '# Observation\nEvidence: exercise-one\n' };
+  for (const [path, content] of Object.entries(contents)) {
+    writeFileSync(join(rootPath, path), content);
+    const revision = { path, content, hash: createHash('sha256').update(content).digest('hex'), revision: 1, updatedAt: '2026-10-18T12:00:00.000Z', actor: 'user' };
+    f.db.prepare('INSERT INTO personalization_revisions VALUES (?, ?, ?, ?)').run('local', path, 1, JSON.stringify(revision));
+  }
+  return { rootPath, workspaceId, contents };
 }
 
 test('legacy backup retains snapshot bytes from WAL and publishes only a private SQLite file', () => {
@@ -135,5 +153,103 @@ test('missing or linked canonical rollouts refuse a partial native backup', () =
     symlinkSync(external, rollout);
     assert.match(run(f).stderr, /not links/);
     assert.deepEqual(readdirSync(f.out), []);
+  } finally { f.db.close(); }
+});
+
+test('backup includes bound Markdown and immutable revisions with private permissions, excluding unrelated files', () => {
+  const f = fixture();
+  const personal = personalizationFixture(f);
+  writeFileSync(join(personal.rootPath, 'auth.json'), 'credentials must stay outside the backup');
+  writeFileSync(join(personal.rootPath, 'memories', 'diagnostics.log'), 'diagnostics must stay outside the backup');
+  try {
+    const result = run(f);
+    assert.equal(result.status, 0, result.stderr);
+    const main = readdirSync(f.out).find(name => name.endsWith('.sqlite'))!;
+    assert.deepEqual(readdirSync(f.out).sort(), [main, `${main}.workspace`]);
+    const saved = join(f.out, `${main}.workspace`);
+    assert.deepEqual(readdirSync(saved).sort(), ['.ari-workspace.json', 'TUTOR.md', 'USER.md', 'memories']);
+    assert.deepEqual(readdirSync(join(saved, 'memories')), ['observations']);
+    for (const [path, content] of Object.entries(personal.contents)) {
+      assert.equal(readFileSync(join(saved, path), 'utf8'), content);
+      assert.equal(statSync(join(saved, path)).mode & 0o777, 0o600);
+    }
+    assert.equal(statSync(saved).mode & 0o777, 0o700);
+    assert.equal(JSON.parse(readFileSync(join(saved, '.ari-workspace.json'), 'utf8')).workspaceId, personal.workspaceId);
+    assert.equal(databaseValue(join(f.out, main), 'SELECT COUNT(*) AS count FROM personalization_revisions')!.count, 3);
+    assert.equal(JSON.parse(databaseValue(join(f.out, main), 'SELECT payload FROM personalization_metadata')!.payload as string).rootPath, personal.rootPath);
+  } finally { f.db.close(); }
+});
+
+test('unobserved external edits refuse inconsistent personalization backup without publishing artifacts', () => {
+  const f = fixture();
+  const personal = personalizationFixture(f);
+  writeFileSync(join(personal.rootPath, 'USER.md'), '# Changed outside ARI\n');
+  try {
+    const result = run(f);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /files differ from recorded revisions/);
+    assert.equal(readdirSync(f.dir).includes('backups'), false);
+    assert.equal(readFileSync(join(personal.rootPath, 'USER.md'), 'utf8'), '# Changed outside ARI\n');
+  } finally { f.db.close(); }
+});
+
+test('workspace marker mismatch, escaping bindings and linked notes all refuse backups', () => {
+  for (const scenario of ['marker', 'relative', 'file-link', 'directory-link', 'root-link']) {
+    const f = fixture();
+    const personal = personalizationFixture(f);
+    try {
+      if (scenario === 'marker') writeFileSync(join(personal.rootPath, '.ari-workspace.json'), JSON.stringify({ workspaceId: 'different-owner' }));
+      if (scenario === 'relative') f.db.prepare('UPDATE personalization_metadata SET payload = ?').run(JSON.stringify({ ...personal, rootPath: '../outside', migrated: true }));
+      if (scenario === 'file-link') symlinkSync(f.path, join(personal.rootPath, 'memories', 'linked.md'));
+      if (scenario === 'directory-link') symlinkSync(f.dir, join(personal.rootPath, 'memories', 'linked-directory'));
+      if (scenario === 'root-link') {
+        symlinkSync(personal.rootPath, join(f.dir, 'linked-root'));
+        f.db.prepare('UPDATE personalization_metadata SET payload = ?').run(JSON.stringify({ ...personal, rootPath: join(realpathSync(f.dir), 'linked-root'), migrated: true }));
+      }
+      const result = run(f);
+      assert.notEqual(result.status, 0, scenario);
+      assert.match(result.stderr, /Personalization workspace (?:identity|binding|must contain no symbolic links)/, scenario);
+      assert.equal(readdirSync(f.dir).includes('backups'), false, scenario);
+    } finally { f.db.close(); }
+  }
+});
+
+test('notes changed during copying reject the bundle and remove already-published companions', () => {
+  const f = fixture();
+  const personal = personalizationFixture(f);
+  mkdirSync(`${f.path}.codex/state`, { recursive: true });
+  const native = new DatabaseSync(`${f.path}.codex/state/state_5.sqlite`);
+  native.exec('CREATE TABLE metadata (value TEXT)');
+  native.close();
+  // Simulate an external editor immediately after the initial USER.md read.
+  // This controls the race deterministically without adding hooks to the backup script.
+  const hook = join(f.dir, 'external-editor.mjs');
+  const userPath = join(personal.rootPath, 'USER.md');
+  writeFileSync(hook, `import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+const originalOpen = fs.open;
+let changed = false;
+fs.open = async function(path, ...args) {
+  const handle = await originalOpen(path, ...args);
+  const originalRead = handle.readFile.bind(handle);
+  handle.readFile = async function(...readArgs) {
+    const result = await originalRead(...readArgs);
+    if (!changed && String(path) === ${JSON.stringify(userPath)}) {
+      changed = true;
+      await fs.writeFile(path, '# Concurrent edit\\n');
+    }
+    return result;
+  };
+  return handle;
+};
+syncBuiltinESMExports();
+`);
+  try {
+    const result = run(f, { NODE_OPTIONS: `--import=${pathToFileURL(hook).href}` });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /workspace changed during backup/);
+    assert.deepEqual(readdirSync(f.out), []);
+    assert.equal(readFileSync(userPath, 'utf8'), '# Concurrent edit\n');
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM personalization_revisions').get()!.count, 3);
   } finally { f.db.close(); }
 });

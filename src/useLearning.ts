@@ -1,3 +1,4 @@
+import { appStorage } from './storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LearningView, MainChatRequest } from '../shared/learning';
 
@@ -13,7 +14,7 @@ export function learningError(error: unknown) { return error instanceof Error ? 
 export type PendingMainMessage = { request: MainChatRequest; createdAt: string; status: 'sending' | 'failed'; error?: string };
 const pendingKey = 'ari:mainPending';
 function savedPending(): PendingMainMessage[] {
-  try { return (JSON.parse(localStorage.getItem(pendingKey) || '[]') as PendingMainMessage[])
+  try { return (JSON.parse(appStorage.getItem(pendingKey) || '[]') as PendingMainMessage[])
     .filter(item => item.request?.id && item.request?.message).map(item => ({ ...item, status: 'failed', error: 'Delivery was interrupted. Retry to check or resume this message.' })); }
   catch { return []; }
 }
@@ -34,7 +35,7 @@ export function useLearning(mainOpen: boolean, betweenExercises = mainOpen) {
       setPending(current => current.filter(item => !next.messages.some(message => message.id === item.request.id)));
     } catch (failure) { if (sequence === sequenceRef.current) setError(learningError(failure)); }
   }, []);
-  useEffect(() => { localStorage.setItem(pendingKey, JSON.stringify(pending)); }, [pending]);
+  useEffect(() => { appStorage.setItem(pendingKey, JSON.stringify(pending)); }, [pending]);
   useEffect(() => {
     void refresh();
     const stream = new EventSource('/api/learning/events');

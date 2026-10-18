@@ -12,6 +12,8 @@ Run `npm run setup:hooks` once per development checkout. This installs local com
 
 Never commit `.env`, `.local/`, Codex authentication/history, backups, uploads, or screenshots of real learner work. Use synthetic fixtures. Backups include the SQLite database and private native-history companion directory, but exclude authentication and diagnostics.
 
+Personalization uses real Markdown under `~/.ari/workspace/` (override with `ARI_WORKSPACE_PATH`). The database binds to one workspace and stores immutable document revisions. Back up and restore the files, their `.ari-workspace.json` identity marker, and the matching database together. `TUTOR.md` and `USER.md` enter each model request; detailed `memories/` files are accessed through scoped tools. Private Markdown never belongs in Git.
+
 New installations use `.local/ari.sqlite`. When upgrading an older checkout, update the app-specific provider/path variables in `.env` to the `ARI_` prefix and set `ARI_DB_PATH` to your existing SQLite file before starting. Keep that file and its `.codex` companion in place so saved progress and native conversation history remain available. Browser navigation preferences now use `ari:` keys and reset once; learning data is unchanged.
 
 The server binds to `127.0.0.1` and has no account authentication. Do not expose it as a public or shared service. A public GitHub repository does not make it a hosted app. External model calls receive relevant learning context and deliberately submitted work. Google Fonts supplies the UI fonts.
@@ -27,10 +29,12 @@ Models are explicit in `.env.example`. Change them to IDs available to your acco
 Keep the live database and `dist/` untouched while someone is studying. Use `npm run build:preview`, then run an isolated instance:
 
 ```sh
-PORT=3002 ARI_DB_PATH=.local/preview/state.sqlite ARI_LEGACY_PATH=.local/preview/legacy.json ARI_DIST_PATH=.local/preview-dist npm start
+PORT=3002 ARI_DB_PATH=.local/preview/state.sqlite ARI_WORKSPACE_PATH=.local/preview/workspace ARI_LEGACY_PATH=.local/preview/legacy.json ARI_DIST_PATH=.local/preview-dist npm start
 ```
 
 Coordinate any production restart. Camera/vision changes need real browser checks, including irrelevant and illegible work; never use a learner's real progress as test data.
+
+`npm run onboarding` starts a separate fresh-learner preview on port 3002. It uses a new private database/workspace and a namespaced browser URL each time, while keeping the configured tutor connection. Stop the previous preview before starting another. For a preview build, run `ARI_DEMO_DIST_PATH=.local/preview-dist npm run onboarding`.
 
 ## License
 

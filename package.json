@@ -15,6 +15,7 @@
     "stop": "node scripts/local-server.mjs stop",
     "status": "node scripts/local-server.mjs status",
     "backup": "node scripts/backup.mjs",
+    "onboarding": "node scripts/onboarding.mjs",
     "test": "tsx --test tests/*.test.ts",
     "setup:hooks": "node scripts/setup-hooks.mjs",
     "privacy:check": "node scripts/check-public-files.mjs --history"

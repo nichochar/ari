@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AppState, Exercise } from '../shared/types.js';
 import type { LearnerMemory, LearningData, LearningLesson } from '../shared/learning.js';
+import type { PersonalizationMetadata, PersonalizationRevision } from '../shared/personalization.js';
 import { exercises, modules } from '../shared/curriculum.js';
 import { stateSchema, validateImage } from './schema.js';
 import { learningDataSchema } from './learning-schema.js';
@@ -52,8 +53,10 @@ export class StateStore {
   private readonly db: DatabaseSync;
   private inUpdate = false;
   private readonly learnerId: string;
+  readonly dbPath: string;
 
   constructor(dbPath: string, options: { legacyPath?: string; learnerId?: string } = {}) {
+    this.dbPath = dbPath;
     this.learnerId = options.learnerId ?? 'local';
     if (!this.learnerId || this.learnerId.length > 120) throw new Error('Invalid learner identity.');
     mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
@@ -160,6 +163,13 @@ export class StateStore {
         learner_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
         PRIMARY KEY (learner_id, revision)
       );
+      CREATE TABLE IF NOT EXISTS personalization_metadata (
+        learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS personalization_revisions (
+        learner_id TEXT NOT NULL, path TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY (learner_id, path, revision)
+      );
     `);
     if (!this.db.prepare('SELECT 1 FROM learning_state WHERE learner_id = ?').get(this.learnerId)) {
       this.writeLearning(learningDataSchema.parse(defaultLearning(this.loadState(), this.learnerId)) as LearningData);
@@ -253,6 +263,37 @@ export class StateStore {
   async readMemoryRevisions(): Promise<LearnerMemory[]> {
     return this.transaction(() => (this.db.prepare('SELECT payload FROM learning_memory_revisions WHERE learner_id = ? ORDER BY revision')
       .all(this.learnerId) as unknown as JsonRow[]).map(row => JSON.parse(row.payload) as LearnerMemory), true);
+  }
+
+  readPersonalizationMetadata(): PersonalizationMetadata | null {
+    const row = this.db.prepare('SELECT payload FROM personalization_metadata WHERE learner_id = ?').get(this.learnerId) as JsonRow | undefined;
+    return row ? JSON.parse(row.payload) as PersonalizationMetadata : null;
+  }
+
+  savePersonalizationMetadata(metadata: PersonalizationMetadata): void {
+    const previous = this.readPersonalizationMetadata();
+    if (previous && (previous.rootPath !== metadata.rootPath || previous.workspaceId !== metadata.workspaceId)) {
+      throw new Error('Personalization workspace binding cannot be changed.');
+    }
+    this.db.prepare('INSERT INTO personalization_metadata (learner_id, payload) VALUES (?, ?) ON CONFLICT(learner_id) DO UPDATE SET payload = excluded.payload')
+      .run(this.learnerId, JSON.stringify(metadata));
+  }
+
+  readPersonalizationRevisions(path: string, offset = 0, limit = 50): PersonalizationRevision[] {
+    return (this.db.prepare('SELECT payload FROM personalization_revisions WHERE learner_id = ? AND path = ? ORDER BY revision DESC LIMIT ? OFFSET ?')
+      .all(this.learnerId, path, limit, offset) as unknown as JsonRow[]).map(row => JSON.parse(row.payload) as PersonalizationRevision);
+  }
+
+  readPersonalizationRevision(path: string, revision: number): PersonalizationRevision | null {
+    const row = this.db.prepare('SELECT payload FROM personalization_revisions WHERE learner_id = ? AND path = ? AND revision = ?')
+      .get(this.learnerId, path, revision) as JsonRow | undefined;
+    return row ? JSON.parse(row.payload) as PersonalizationRevision : null;
+  }
+
+  savePersonalizationRevision(revision: PersonalizationRevision): void {
+    // Immutable history. Current content is always read from the Markdown files.
+    this.db.prepare('INSERT INTO personalization_revisions (learner_id, path, revision, payload) VALUES (?, ?, ?, ?)')
+      .run(this.learnerId, revision.path, revision.revision, JSON.stringify(revision));
   }
 
   private loadState(): AppState {

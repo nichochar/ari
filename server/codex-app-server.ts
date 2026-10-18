@@ -316,7 +316,7 @@ export async function createCodexAppServer(options: CodexAppServerOptions = {}):
   };
   try {
     await client.request('initialize', {
-      clientInfo: { name: 'ari_tutor', title: 'ARI tutor', version: '0.1.0' },
+      clientInfo: { name: 'ari_tutor', title: 'Ari tutor', version: '0.1.0' },
       capabilities: { experimentalApi: true },
     });
     client.notify('initialized');

@@ -96,7 +96,7 @@ test('retrying an older failed turn cannot discard a newer completed conversatio
 
 test('actual provider compaction output is preserved independently of the full transcript', async () => {
   const original = process.env.LEARNING_COMPACTION_TOKENS; process.env.LEARNING_COMPACTION_TOKENS = '1'; let compacted = 0; const base = fixtureLearningProvider();
-  const fx = await fixture({ ...base, compact: async (input, instructions) => { compacted++; assert.match(instructions, /ARI/); return [{ type: 'compaction', encrypted_content: 'canonical-opaque' }, { role: 'user', content: 'retained' }]; } });
+  const fx = await fixture({ ...base, compact: async (input, instructions) => { compacted++; assert.match(instructions, /Ari/); return [{ type: 'compaction', encrypted_content: 'canonical-opaque' }, { role: 'user', content: 'retained' }]; } });
   try { await chat(fx, 'First'); await fx.settle(); await chat(fx, 'Second'); await fx.settle(); const d = await fx.store().readLearning(); assert.equal(compacted, 1); assert.equal(d.messages.length, 4); assert.deepEqual(d.context[0], { type: 'compaction', encrypted_content: 'canonical-opaque' }); assert.ok(d.compactedAt); assert.ok(d.events.some(e => e.type === 'compaction'));
   } finally { if (original === undefined) delete process.env.LEARNING_COMPACTION_TOKENS; else process.env.LEARNING_COMPACTION_TOKENS = original; await fx.close(); }
 });
@@ -106,11 +106,11 @@ test('reflection analysis preserves user corrections, delivers at idle once and 
   const provider = fixtureLearningProvider(undefined, async <T>() => { begun(); await gate; return { message: 'Compare an independent source next time.', memory: 'Stale inferred notes' } as T; });
   const fx = await fixture(provider);
   try { const saved = await fx.request('/api/reflections', 'POST', { exerciseId: exercises[0].id, confidence: 3, notes: 'The comparison was difficult.' }); assert.equal(saved.status, 201); await started;
-    const before = (await fx.store().readLearning()).memory; const patch = await fx.request('/api/learning/memory', 'PATCH', { revision: before.revision, content: 'User correction: I understand comparison but need vocabulary.' }); assert.equal(patch.status, 200);
+    const before = (await fx.service().view()).memory; const patch = await fx.request('/api/learning/memory', 'PATCH', { revision: before.revision, content: 'User correction: I understand comparison but need vocabulary.' }); assert.equal(patch.status, 200);
     assert.equal((await fx.request('/api/learning/memory', 'PATCH', { revision: before.revision, content: 'Old revision' })).status, 409);
-    release(); await fx.settle(); let d = await fx.store().readLearning(); assert.match(d.memory.content, /User correction/); assert.equal((await (await fx.request('/api/learning')).json()).messages.length, 0);
+    release(); await fx.settle(); let d = await fx.store().readLearning(); assert.match((await fx.service().view()).memory.content, /User correction/); assert.equal((await (await fx.request('/api/learning')).json()).messages.filter((m: {proactive?: boolean}) => m.proactive).length, 0);
     assert.equal((await (await fx.request('/api/learning/idle', 'POST', {})).json()).delivered, 1); assert.equal((await (await fx.request('/api/learning/idle', 'POST', {})).json()).delivered, 0);
-    d = await fx.store().readLearning(); assert.ok(d.context.some(i => (i as {content?:string}).content === 'Compare an independent source next time.')); assert.equal(d.messages.length, 1);
+    d = await fx.store().readLearning(); assert.ok(d.context.some(i => (i as {content?:string}).content === 'Compare an independent source next time.')); assert.equal(d.messages.filter(m => m.proactive).length, 1);
     assert.equal((await (await fx.request('/api/learning')).json()).unreadCount, 1); await fx.request('/api/learning/read', 'POST', {}); assert.equal((await (await fx.request('/api/learning')).json()).unreadCount, 0);
   } finally { release(); await fx.close(); }
 });

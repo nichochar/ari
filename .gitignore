@@ -27,3 +27,8 @@ chatgpt-auth.json
 /PLAN.md
 /USER.md
 /MEMORY.md
+/TUTOR.md
+/memories/
+.ari/
+.ari-workspace.json
+*.workspace/

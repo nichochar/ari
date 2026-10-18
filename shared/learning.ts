@@ -1,4 +1,5 @@
 import type { Exercise, Module } from './types.js';
+import type { PersonalizationView } from './personalization.js';
 
 export interface Curriculum {
   id: string; learnerId: string; title: string; description: string; topic: string;
@@ -48,8 +49,11 @@ export interface LearningData {
   reviewedEvidenceIds: string[];
 }
 export interface LearningView {
+  personalization: PersonalizationView;
   curricula: Curriculum[]; lessons: LearningLesson[]; exercises: Exercise[];
-  messages: MainMessage[]; proposals: LearningProposal[]; memory: LearnerMemory;
+  messages: MainMessage[]; proposals: LearningProposal[];
+  /** Compatibility projection of current USER.md, never the archived memory blob. */
+  memory: LearnerMemory;
   materials: Omit<LearningMaterial, 'text' | 'sourceData'>[]; runs: Omit<LearningRun, 'context' | 'contextTokens' | 'completedText'>[];
   events: Omit<LearningEvent, 'data'>[];
   unreadCount: number; provider: { configured: boolean; model: string; };

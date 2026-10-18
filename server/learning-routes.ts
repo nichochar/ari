@@ -1,14 +1,51 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { mainChatRequestSchema, memoryPatchSchema } from './learning-schema.js';
+import { mainChatRequestSchema, memoryPatchSchema, onboardingCompleteSchema, personalizationRestoreSchema, personalizationWriteSchema } from './learning-schema.js';
 import { MaterialError } from './learning-materials.js';
 import { LearningError, LearningService } from './learning-service.js';
+import { PersonalizationError } from './personalization.js';
 
 const revisionSchema = z.object({ revision: z.number().int().min(1) }).strict();
 const emptySchema = z.object({}).strict();
 export function learningRoutes(service: LearningService) {
   const router = Router();
   router.get('/', async (_req, res) => res.json(await service.view()));
+  router.get('/personalization', async (_req, res) => { res.setHeader('Cache-Control', 'private, no-store'); res.json(await service.workspace.view()); });
+  router.get('/personalization/file', async (req, res) => {
+    const path = z.string().min(1).max(300).parse(req.query.path);
+    const offset = z.coerce.number().int().min(0).max(64000).optional().parse(req.query.offset);
+    const limit = z.coerce.number().int().min(1).max(64000).optional().parse(req.query.limit);
+    res.setHeader('Cache-Control', 'private, no-store'); res.json(await service.workspace.read(path, offset, limit));
+  });
+  router.put('/personalization/file', async (req, res) => {
+    const input = personalizationWriteSchema.parse(req.body);
+    const file = await service.workspace.write(input.path, input.content, { expectedHash: input.expectedHash, actor: 'user', reason: input.reason ?? 'Edited in personalization settings' });
+    await service.personalizationChanged(); res.json(file);
+  });
+  router.get('/personalization/history', async (req, res) => {
+    const path = z.string().min(1).max(300).parse(req.query.path);
+    const offset = z.coerce.number().int().min(0).max(100000).optional().parse(req.query.offset);
+    const limit = z.coerce.number().int().min(1).max(100).optional().parse(req.query.limit);
+    res.setHeader('Cache-Control', 'private, no-store'); res.json({ revisions: await service.workspace.revisions(path, offset, limit) });
+  });
+  router.post('/personalization/restore', async (req, res) => {
+    const input = personalizationRestoreSchema.parse(req.body);
+    const file = await service.workspace.restore(input.path, input.revision, { expectedHash: input.expectedHash, actor: 'user', reason: 'Restored historical personalization revision' });
+    await service.personalizationChanged(); res.json(file);
+  });
+  router.get('/onboarding', async (_req, res) => res.json(await service.ensureOnboarding()));
+  router.post('/onboarding/begin', async (req, res) => { emptySchema.parse(req.body); res.json(await service.beginOnboarding()); });
+  router.post('/onboarding/skip', async (req, res) => { emptySchema.parse(req.body); res.json(await service.skipOnboarding()); });
+  router.post('/onboarding/complete', async (req, res) => {
+    const input = onboardingCompleteSchema.parse(req.body);
+    if (input.goals && !input.expectedUserHash) throw new LearningError(400, 'Read the current learner document before completing setup.');
+    if (!input.goals) {
+      const current = await service.workspace.coreView();
+      if ((input.expectedUserHash && input.expectedUserHash !== current.user.hash) || (input.expectedTutorHash && input.expectedTutorHash !== current.tutor.hash))
+        throw new LearningError(409, 'Personalization changed. Review the latest files before finishing setup.');
+    }
+    res.json(await service.completeOnboarding(input.goals ? { ...input, goals: input.goals, expectedUserHash: input.expectedUserHash! } : undefined));
+  });
   router.get('/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -39,6 +76,7 @@ export function learningRoutes(service: LearningService) {
   router.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (error instanceof MaterialError) return res.status(400).json({ error: error.message });
     if (error instanceof LearningError) return res.status(error.status).json({ error: error.message });
+    if (error instanceof PersonalizationError) return res.status(error.status).json({ error: error.message, code: error.code });
     if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid learning request.' });
     next(error);
   });

@@ -16,6 +16,7 @@ class FakeCodex implements CodexAppServerClient {
   closeListeners = new Set<(error: CodexTransportError) => void>();
   requestHandler?: (r: CodexServerRequest) => unknown | Promise<unknown>;
   threads = new Map<string, Obj[]>(); sequence = 0; authType = 'chatgpt';
+  mcpTools = new Map<string, string[]>(); mcpStatusPolls = 0; mcpReadyAfter = 0;
   actions: ((threadId: string, turn: Obj) => Promise<void>)[] = [];
   compactConfirmed = true;
   async request<T>(method: string, raw: unknown): Promise<T> {
@@ -27,7 +28,17 @@ class FakeCodex implements CodexAppServerClient {
       let inherited = method === 'thread/fork' ? structuredClone(this.threads.get(p.threadId) ?? []) : [];
       if (p.beforeTurnId) inherited = inherited.slice(0, inherited.findIndex(turn => turn.id === p.beforeTurnId));
       this.threads.set(id, inherited);
+      const workspace = p.config?.mcp_servers?.ari_workspace;
+      if (workspace?.enabled) this.mcpTools.set(id, workspace.enabled_tools ?? []);
       result = { thread: { id } };
+    }
+    if (method === 'thread/resume') {
+      const workspace = p.config?.mcp_servers?.ari_workspace;
+      if (workspace?.enabled) this.mcpTools.set(p.threadId, workspace.enabled_tools ?? []);
+    }
+    if (method === 'mcpServerStatus/list') {
+      this.mcpStatusPolls++;
+      result = { data: this.mcpStatusPolls > this.mcpReadyAfter ? [{ name: 'ari_workspace', tools: Object.fromEntries((this.mcpTools.get(p.threadId) ?? []).map(name => [name, {}])) }] : [] };
     }
     if (method === 'thread/turns/list') result = { data: [...(this.threads.get(p.threadId) ?? [])].reverse(), nextCursor: null };
     if (method === 'turn/start' || method === 'thread/compact/start') {
@@ -125,7 +136,7 @@ test('native completed turn is recovered after crash between final item and comp
     if ((context[0] as CodexLearningContext).messages.length) throw new Error('simulated database interruption');
   };
   await assert.rejects(p.run(r));
-  // Native Codex completes while ARI is unavailable.
+  // Native Codex completes while Ari is unavailable.
   await new Promise(resolve => setImmediate(resolve));
   const count = c.calls.filter(v => v.method === 'turn/start').length;
   const recovered = await p.run(request(saved));
@@ -424,4 +435,142 @@ test('retry excludes a rejected model turn even if native fallback completed bef
   const fork = c.calls.find(v => v.method === 'thread/fork')!.params;
   assert.equal(fork.beforeTurnId, (saved[0] as CodexLearningContext).rejectedTurnId);
   assert.ok(!Object.hasOwn(recovered.context![0] as Obj, 'rejectedTurnId'));
+});
+
+test('structured interactive tutor preserves selected model, effort and images, returning final JSON after commentary and tools', async () => {
+  const c = new FakeCodex();
+  const workspaceTool = { ...tool, name: 'workspace_read' };
+  const schema = { type: 'object', properties: { feedback: { type: 'string' } }, required: ['feedback'], additionalProperties: false };
+  const p = createCodexLearningProvider({ client: c, cwd: '/tmp/ari-codex-provider-test', model: 'gpt-6.1-sol', reasoningEffort: 'medium' });
+  const final = '{"feedback":"Try one diagram."}';
+  let toolCalls = 0;
+  c.actions.push(async (threadId, turn) => {
+    await c.emit('turn/started', { threadId, turn });
+    const prelude = { type: 'agentMessage', id: 'structured-commentary', text: 'I will check your preference.', phase: 'commentary' };
+    turn.items.push(prelude); await c.emit('item/completed', { threadId, turnId: turn.id, item: prelude });
+    assert.equal((await c.tool(threadId, turn.id, 'structured-read', 'workspace_read', { path: 'USER.md' })).success, true);
+    await c.answer(final)(threadId, turn);
+  });
+  const result = await p.run({ ...request([{ role: 'user', content: [
+    { type: 'input_text', text: 'What does my work show?' },
+    { type: 'input_image', image_url: 'data:image/png;base64,AA==' },
+  ] }]), tools: [workspaceTool], ephemeral: true, outputSchema: schema,
+  instructions: 'Old preferences', refreshInstructions: async () => 'Current USER.md and TUTOR.md',
+  executeTool: async () => { toolCalls++; return { preference: 'Start with a diagram.' }; } });
+  assert.deepEqual(JSON.parse(result.text), { feedback: 'Try one diagram.' });
+  assert.equal(toolCalls, 1);
+  const start = c.calls.find(call => call.method === 'thread/start')!.params;
+  assert.equal(start.ephemeral, true); assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.allowProviderModelFallback, false);
+  assert.match(start.developerInstructions, /Current USER.md and TUTOR.md/);
+  assert.equal(start.config.model_reasoning_effort, 'medium');
+  assert.deepEqual(start.config.mcp_servers.ari_workspace, { command: process.execPath, args: [], enabled: false });
+  const turn = c.calls.find(call => call.method === 'turn/start')!.params;
+  assert.equal(turn.model, 'gpt-6.1-sol'); assert.equal(turn.effort, 'medium'); assert.deepEqual(turn.outputSchema, schema);
+  assert.deepEqual(turn.input, [{ type: 'text', text: 'What does my work show?', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AA==' }]);
+  const marker = result.context![0] as CodexLearningContext;
+  assert.equal(marker.messages.length, 2, 'canonical native checkpoint retains commentary and final answer');
+  assert.deepEqual(marker.dynamicToolNames, ['workspace_read']);
+  const recovered = await p.run({ ...request(result.context), tools: [workspaceTool], outputSchema: schema, ephemeral: true });
+  assert.deepEqual(JSON.parse(recovered.text), { feedback: 'Try one diagram.' });
+  assert.equal(c.calls.filter(call => call.method === 'turn/start').length, 1);
+});
+
+test('native dynamic workspace catalog is inherited across forks without creating an MCP bridge', async () => {
+  const c = new FakeCodex();
+  const tools = [tool, { ...tool, name: 'workspace_read' }, { ...tool, name: 'workspace_write' }];
+  const p = createCodexLearningProvider({ client: c, cwd: '/tmp/ari-codex-provider-test', mcpBridgeFactory: async () => { throw new Error('Native catalog already has workspace tools'); } });
+  const first = await p.run({ ...request(), tools });
+  const second = await p.run({ ...request([...first.context!, { role: 'user', content: 'Another question' }]), tools, runKey: 'next-turn' });
+  assert.deepEqual((first.context![0] as CodexLearningContext).dynamicToolNames, tools.map(tool => tool.name));
+  assert.deepEqual((second.context![0] as CodexLearningContext).dynamicToolNames, tools.map(tool => tool.name));
+  assert.equal(c.calls.filter(call => call.method === 'thread/start').length, 1);
+  const fork = c.calls.find(call => call.method === 'thread/fork')!.params;
+  assert.equal(fork.dynamicTools, undefined, 'immutable native catalog is inherited');
+  assert.deepEqual(fork.config.mcp_servers.ari_workspace, { command: process.execPath, args: [], enabled: false });
+  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 0);
+});
+
+test('legacy native markers get a stable MCP bridge and durable mutations without rebuilding saved context', async () => {
+  const c = new FakeCodex();
+  c.threadConfig = { mcp_servers: { unrelated: { enabled: false }, ari_workspace: { enabled: false } } } as unknown as typeof c.threadConfig;
+  let bridgeCalls = 0, sideEffects = 0, closed = 0;
+  let executeBridge!: (name: string, args: unknown, callId: string) => Promise<unknown>;
+  let saved: unknown[] = [];
+  const tools = [tool, { ...tool, name: 'workspace_write' }, { ...tool, name: 'complete_onboarding' }];
+  const config = { mcp_servers: { ari_workspace: { enabled: true, command: 'synthetic-bridge', enabled_tools: ['workspace_write', 'complete_onboarding'], env: { ARI_WORKSPACE_MCP_TOKEN: 'fixture-token' } } } };
+  const p = createCodexLearningProvider({ client: c, cwd: '/tmp/ari-codex-provider-test', mcpBridgeFactory: async (selected, execute) => {
+    bridgeCalls++; executeBridge = execute;
+    assert.deepEqual(selected.map(tool => tool.name), ['workspace_write', 'complete_onboarding']);
+    return { config, close: async () => { closed++; } };
+  } });
+  const initial = await p.run(request());
+  const legacy = structuredClone(initial.context![0]) as CodexLearningContext;
+  delete legacy.dynamicToolNames;
+  const args = { path: 'USER.md', content: 'Prefers visual examples.', expectedHash: 'synthetic-hash' };
+  c.mcpReadyAfter = 1;
+  c.actions.push(async (threadId, turn) => {
+    assert.ok(c.mcpStatusPolls >= 2, 'wait for the MCP catalog before starting a model turn');
+    await c.emit('turn/started', { threadId, turn });
+    const first = await executeBridge('workspace_write', args, 'mcp-first');
+    const duplicate = await executeBridge('workspace_write', { content: args.content, expectedHash: args.expectedHash, path: args.path }, 'mcp-regenerated');
+    assert.deepEqual(first, duplicate);
+    await c.answer('Your preference is saved.')(threadId, turn);
+  });
+  const r = { ...request([legacy, { role: 'user', content: 'Save this preference.' }]), runKey: 'legacy-upgrade', tools,
+    onCheckpoint: (context: unknown[]) => { saved = structuredClone(context); },
+    executeTool: async (name: string, received: unknown, key: string) => {
+      assert.equal(name, 'workspace_write'); assert.deepEqual(received, args);
+      assert.match(key, /^codex:legacy-upgrade:/);
+      assert.equal((saved[0] as CodexLearningContext).tools.at(-1)?.complete, undefined, 'checkpoint precedes mutation');
+      sideEffects++; return { path: 'USER.md', revision: 2 };
+    } };
+  const result = await p.run(r);
+  assert.equal(sideEffects, 1);
+  const fork = c.calls.find(call => call.method === 'thread/fork')!.params;
+  assert.match(fork.developerInstructions, /Additional Ari workspace tools are available through ari_workspace MCP/);
+  assert.equal(fork.threadId, legacy.threadId);
+  assert.deepEqual(fork.config.mcp_servers.ari_workspace, config.mcp_servers.ari_workspace);
+  assert.deepEqual(fork.config.mcp_servers.unrelated, { enabled: false });
+  assert.equal(c.calls.filter(call => call.method === 'thread/start').length, 1, 'native history is forked, never recreated');
+  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 0, 'no synthetic transcript reconstruction');
+  assert.deepEqual((result.context![0] as CodexLearningContext).dynamicToolNames, [], 'MCP tools do not pretend to join the immutable dynamic catalog');
+  assert.equal((result.context![0] as CodexLearningContext).tools[0].complete, true);
+  const resumed = await p.run({ ...r, input: result.context! });
+  assert.equal(resumed.text, result.text); assert.equal(sideEffects, 1); assert.equal(bridgeCalls, 1);
+  assert.equal(c.calls.filter(call => call.method === 'turn/start').length, 2);
+  const resume = c.calls.find(call => call.method === 'thread/resume')!.params;
+  assert.deepEqual(resume.config.mcp_servers.ari_workspace, config.mcp_servers.ari_workspace);
+  await assert.rejects(executeBridge('workspace_write', args, 'outside-owned-run'), { code: 'CODEX_INCOMPLETE' });
+  c.actions.push(async (threadId, turn) => {
+    await c.emit('turn/started', { threadId, turn });
+    assert.deepEqual(await executeBridge('workspace_write', { ...args, expectedHash: 'next-hash' }, 'mcp-next-run'), { revision: 3 });
+    await c.answer('Updated in the new turn.')(threadId, turn);
+  });
+  const following = await p.run({ ...r, input: [...resumed.context!, { role: 'user', content: 'Update the preference again.' }], runKey: 'legacy-next-run',
+    executeTool: async (_name, received, key) => {
+      assert.deepEqual(received, { ...args, expectedHash: 'next-hash' });
+      assert.match(key, /^codex:legacy-next-run:/, 'stable bridge dispatches through the currently owned run');
+      sideEffects++; return { revision: 3 };
+    } });
+  assert.equal(following.text, 'Updated in the new turn.');
+  assert.equal(sideEffects, 2); assert.equal(bridgeCalls, 1);
+  assert.equal(c.calls.filter(call => call.method === 'thread/start').length, 1);
+  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 0);
+  assert.deepEqual((following.context![0] as CodexLearningContext).dynamicToolNames, []);
+  c.close(); assert.equal(closed, 1);
+});
+
+test('legacy workspace readiness failure starts no learner turn and preserves the committed native checkpoint', async () => {
+  const c = new FakeCodex();
+  const workspaceTool = { ...tool, name: 'workspace_read' };
+  const p = createCodexLearningProvider({ client: c, cwd: '/tmp/ari-codex-provider-test', timeoutMs: 30,
+    mcpBridgeFactory: async () => ({ config: { mcp_servers: { ari_workspace: { enabled: true, command: 'synthetic-bridge', enabled_tools: ['workspace_read'] } } }, close: async () => {} }) });
+  const original = await p.run(request());
+  const before = structuredClone(original.context);
+  c.mcpReadyAfter = 1000;
+  await assert.rejects(p.run({ ...request([...original.context!, { role: 'user', content: 'Read a workspace note.' }]), runKey: 'tools-not-ready', tools: [tool, workspaceTool] }), { code: 'CODEX_TOOLS_UNAVAILABLE' });
+  assert.deepEqual(original.context, before);
+  assert.equal(c.calls.filter(call => call.method === 'turn/start').length, 1, 'only the original turn ran');
+  assert.ok(c.mcpStatusPolls >= 1);
+  c.close();
 });

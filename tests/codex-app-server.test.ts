@@ -56,7 +56,7 @@ test('app-server isolates state and environment while retaining ChatGPT auth and
     { PATH: '/bin', HOME: '/home/user', CODEX_HOME: '/codex' });
   const { client, directory } = await fakeServer(t);
   const metadata = await client.request<{ args: string[]; cwd: string; codexHome: string; envKeys: string[]; initialization: unknown; initialized: boolean }>('metadata', {});
-  assert.deepEqual(metadata.initialization, { clientInfo: { name: 'ari_tutor', title: 'ARI tutor', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+  assert.deepEqual(metadata.initialization, { clientInfo: { name: 'ari_tutor', title: 'Ari tutor', version: '0.1.0' }, capabilities: { experimentalApi: true } });
   assert.equal(metadata.initialized, true);
   assert.equal(metadata.cwd, await realpath(join(directory, 'runtime')));
   assert.equal(metadata.codexHome, join(directory, 'state', 'home'));

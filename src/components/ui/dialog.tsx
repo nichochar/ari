@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from './button';
 
-// Adapted from shadcn/ui's Base UI dialog; ARI styling replaces registry classes.
+// Adapted from shadcn/ui's Base UI dialog; Ari styling replaces registry classes.
 // https://ui.shadcn.com/r/styles/base-nova/dialog.json
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;

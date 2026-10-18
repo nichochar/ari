@@ -119,3 +119,15 @@ export const mainChatRequestSchema = z.object({
   materialIds: z.array(id).max(20).optional(),
 }).strict();
 export const memoryPatchSchema = z.object({ content: text(30000), revision: z.number().int().min(1) }).strict();
+
+export const personalizationWriteSchema = z.object({
+  path: text(300).min(1), content: text(64000), expectedHash: text(128).nullable(), reason: text(1000).optional(),
+}).strict();
+export const personalizationRestoreSchema = z.object({
+  path: text(300).min(1), revision: z.number().int().min(1), expectedHash: text(128).nullable(),
+}).strict();
+export const onboardingCompleteSchema = z.object({
+  name: text(200).optional(), goals: text(3000).min(1).optional(), startingLevel: text(3000).optional(),
+  learningPreferences: text(3000).optional(), tutorStyle: text(3000).optional(), boundaries: text(3000).optional(),
+  expectedUserHash: text(128).optional(), expectedTutorHash: text(128).optional(),
+}).strict();

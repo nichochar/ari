@@ -1,7 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { ZodError, z } from 'zod';
 import { modules, exercises } from '../shared/curriculum.js';
 import { MAX_EXERCISE_PAGES, type AppState, type DailyReview, type Exercise, type LessonSession, type Module, type Progress, type StudyPlan, type TutorRequest, type TutorResponse } from '../shared/types.js';
@@ -11,14 +12,17 @@ import { StateStore } from './state.js';
 import { cameraBridge } from './camera.js';
 import { LearningService } from './learning-service.js';
 import { learningRoutes } from './learning-routes.js';
-import type { LearningAgentProvider } from './learning-provider.js';
+import { LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
+import { PersonalizationError, PersonalizationWorkspace } from './personalization.js';
+import { createPersonalizedAsk } from './personalization-ai.js';
+import { profileDefaults } from './personalization-tools.js';
 
 const curatedExercises = exercises as Exercise[];
 const curriculumModules = modules as Module[];
 const moduleMap = new Map(curriculumModules.map(module => [module.id, module]));
 const curatedMap = new Map(curatedExercises.map(exercise => [exercise.id, exercise]));
 
-type AppOptions = { learningProvider?: LearningAgentProvider; learningConfigured?: boolean; dbPath?: string; legacyStatePath?: string; ai?: AIAsk; aiConfigured?: boolean; model?: string; distPath?: string };
+type AppOptions = { learningProvider?: LearningAgentProvider; personalizationProvider?: LearningAgentProvider; learningConfigured?: boolean; dbPath?: string; legacyStatePath?: string; ai?: AIAsk; aiConfigured?: boolean; model?: string; distPath?: string; workspacePath?: string };
 class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 const body = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const parsed = schema.safeParse(value);
@@ -30,6 +34,16 @@ const allExercises = (state: AppState) => [...curatedExercises, ...state.generat
 const defaultProgress = (exerciseId: string): Progress => ({ exerciseId, status: 'started', confidence: 0,
   updatedAt: new Date().toISOString(), hintCount: 0, lastScore: null, nextReviewAt: null });
 const failAI = (error: unknown): never => {
+  if (error instanceof LearningProviderError) {
+    if (error.code === 'CODEX_LIMIT') throw new HttpError(503, 'Codex usage limit reached. Try again when it resets or configure OpenAI API credits.');
+    if (error.code === 'CODEX_RATE_LIMIT' || error.code === 'API_RATE_LIMIT' || error.code === 'CODEX_BUSY') throw new HttpError(429, 'The tutor is temporarily rate limited or busy. Try again shortly.');
+    if (error.code === 'CODEX_TIMEOUT' || error.code === 'API_TIMEOUT') throw new HttpError(504, 'The tutor timed out. Try again.');
+    if (error.code === 'CODEX_AUTH' || error.code === 'CODEX_UNAVAILABLE') throw new HttpError(503, 'Codex tutoring is unavailable. Check Codex sign-in and local installation.');
+    if (error.code === 'CODEX_MODEL') throw new HttpError(503, 'The configured Codex model is unavailable. Check CODEX_TUTOR_MODEL and CODEX_MODEL.');
+    if (error.code === 'CODEX_UPGRADE') throw new HttpError(503, 'This model needs a newer Codex CLI. Update the local adapter configured by CODEX_BIN.');
+    if (error.code === 'API_AUTH') throw new HttpError(503, 'The AI service is not authorized. Check server credentials.');
+    if (error.code === 'API_CREDITS') throw new HttpError(503, 'OpenAI credits are exhausted. Add credits or configure another tutor provider.');
+  }
   if (error instanceof Error && error.message === 'AI_BUSY') throw new HttpError(429, 'The tutor is busy. Try again shortly.');
   if (error instanceof Error) {
     if (error.message === 'AI_CODEX_LIMIT') throw new HttpError(503, 'Codex usage limit reached. Try again when it resets or configure OpenAI API credits.');
@@ -147,10 +161,6 @@ function recentReviews(state: AppState): DailyReview[] {
   return [...state.dailyReviews].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt)).slice(-7);
 }
 
-function recentMemories(state: AppState): string[] {
-  return [...new Set(recentReviews(state).flatMap(review => review.memories))].slice(-12);
-}
-
 function storedHistory(state: AppState, exerciseId: string) {
   return state.sessions.filter(session => session.exerciseId === exerciseId).slice(-8).flatMap(session => [
     { role: 'user' as const, content: [session.requestText,
@@ -220,7 +230,10 @@ export function createApp(options: AppOptions = {}) {
   const store = new StateStore(options.dbPath ?? process.env.ARI_DB_PATH ?? join(process.cwd(), '.local', 'ari.sqlite'),
     { legacyPath: options.legacyStatePath ?? process.env.ARI_LEGACY_PATH ?? join(process.cwd(), '.local', 'state.json') });
   app.locals.store = store;
-  const learning = new LearningService(store, options.learningConfigured === false ? null : options.learningProvider);
+  const workspacePath = resolve(options.workspacePath ?? (options.dbPath ? `${options.dbPath}.workspace` : process.env.ARI_WORKSPACE_PATH ?? join(homedir(), '.ari', 'workspace')));
+  const workspace = new PersonalizationWorkspace(store, workspacePath);
+  app.locals.workspace = workspace;
+  const learning = new LearningService(store, options.learningConfigured === false ? null : options.learningProvider, workspace);
   app.locals.learning = learning;
   if (options.learningConfigured !== false) void learning.recover().catch(() => undefined);
   const catalogState = async (): Promise<AppState> => {
@@ -229,7 +242,7 @@ export function createApp(options: AppOptions = {}) {
     return { ...state, generatedExercises: [...state.generatedExercises, ...data.exercises.filter(e => !existing.has(e.id) && data.lessons.some(l => l.id === e.moduleId && l.status === 'ready'))] };
   };
   const findModule = async (id: string) => (await store.readLearning()).lessons.find(l => l.id === id && l.status === 'ready') ?? moduleMap.get(id);
-  const ai = options.aiConfigured === false ? undefined : (options.ai ?? createAIAsk());
+  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(options.ai ?? createAIAsk(), options.personalizationProvider, workspace, () => learning.personalizationChanged());
   const aiConfigured = options.aiConfigured ?? Boolean(ai);
   const model = options.model ?? process.env.OPENAI_MODEL ?? 'gpt-5.4';
   const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
@@ -286,6 +299,7 @@ export function createApp(options: AppOptions = {}) {
   app.patch('/api/profile', async (req, res) => {
     const patch = body(profilePatchSchema, req.body);
     const profile = await store.update(state => { state.profile = { ...state.profile, ...patch }; return state.profile; });
+    await learning.syncProfile(patch);
     res.json(profile);
   });
   app.put('/api/progress/:exerciseId', async (req, res) => {
@@ -353,7 +367,7 @@ export function createApp(options: AppOptions = {}) {
       const current = await store.read();
       const { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites } = module;
       const payload = { lesson: { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites },
-        profile: current.profile, language, learnerMessage: input.message, history: lessonHistory(current, module.id), memories: recentMemories(current), learnerNotes: (await store.readLearning()).memory.content };
+        profile: profileDefaults(current.profile), language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message, history: lessonHistory(current, module.id) };
       const raw = await safeAI(ai, 'tutor', lessonInstructions, payload);
       const session: LessonSession = { id: input.id, moduleId: module.id, createdAt: new Date().toISOString(),
         requestText: input.message, language, response: normalizeLesson(raw) };
@@ -386,8 +400,8 @@ export function createApp(options: AppOptions = {}) {
     const submitted = submittedImages(store, state, exercise.id, input.pageIds, input.image);
     if (!ai) throw new HttpError(503, 'AI tutoring is unavailable. Configure a provider to request feedback.');
     const payload = { exercise, mode: input.mode, hintLevel: input.hintLevel ?? Math.min(3, (state.progress[exercise.id]?.hintCount ?? 0) + 1),
-      language: input.language ?? state.profile.language, learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
-      memories: recentMemories(state), learnerNotes: (await store.readLearning()).memory.content, imageOrder: submitted.imageOrder };
+      language: input.language ?? state.profile.language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
+      imageOrder: submitted.imageOrder };
     const raw = await safeAI(ai, 'tutor', tutorInstructions, payload,
       submitted.images.length > 1 ? submitted.images : submitted.images[0]);
     const response = normalizeTutor(raw, input.mode, exercise, Boolean(submitted.images.length || input.message?.trim()), payload.language);
@@ -440,7 +454,7 @@ export function createApp(options: AppOptions = {}) {
         if (!ai) throw new HttpError(503, 'AI daily review is unavailable. The reflection remains saved.');
         const reviewModules = (await store.readLearning()).lessons.filter(l => l.status === 'ready');
         const payload = { date: input.date, timeZone: input.timeZone,
-          profile: state.profile, progress: evidence.progress,
+          profile: profileDefaults(state.profile), progress: evidence.progress,
           lessonSessions: evidence.lessonSessions,
           sessions: evidence.sessions.map(({ id, createdAt, exerciseId, mode, requestText, response }) => ({ id, createdAt, exerciseId, mode, requestText, response })),
           reflections: evidence.reflections.map(({ id, createdAt, exerciseId, confidence, notes }) => ({ id, createdAt, exerciseId, confidence, notes })),
@@ -463,6 +477,9 @@ export function createApp(options: AppOptions = {}) {
         const latest = await store.read();
         if (reviewEvidence(latest, input.date, input.timeZone).evidenceFingerprint !== evidence.evidenceFingerprint)
           continue;
+        await workspace.write(`memories/reviews/${review.date}-${review.id}.md`,
+          `# Daily learning review\n\nDate: ${review.date}\nCreated: ${review.createdAt}\nTime zone: ${review.timeZone}\nEvidence sessions: ${review.evidenceSessionIds.join(', ') || 'none'}\nEvidence reflections: ${review.evidenceReflectionIds.join(', ') || 'none'}\nEvidence lessons: ${(review.evidenceLessonSessionIds ?? []).join(', ') || 'none'}\n\n${review.summary}\n\n## Observations\n${review.memories.map(memory => `- ${memory}`).join('\n')}\n\n## Next steps\n${review.nextSteps.map(step => `- ${step}`).join('\n')}\n`,
+          { expectedHash: null, actor: 'ari', reason: 'Dated review of saved study evidence' });
         return review;
       }
       throw new HttpError(409, 'New work arrived during review. Request the daily review again.');
@@ -479,7 +496,7 @@ export function createApp(options: AppOptions = {}) {
     const currentState = await store.read();
     const language = currentState.profile.language;
     const examples = (await catalogState()).generatedExercises.concat(curatedExercises).filter(e => e.moduleId === module.id).map(({ title, prompt }) => ({ title, prompt }));
-    const proposed = await safeAI(ai, 'generate', generateInstructions, { module, difficulty: input.difficulty, language, examples, profile: currentState.profile, learnerNotes: (await store.readLearning()).memory.content });
+    const proposed = await safeAI(ai, 'generate', generateInstructions, { module, difficulty: input.difficulty, language, examples, profile: profileDefaults(currentState.profile) });
     const parsed = exerciseSchema.safeParse({ ...(proposed as object), id: `generated-${randomUUID()}`, moduleId: module.id, difficulty: input.difficulty, generated: true });
     if (!parsed.success || parsed.data.hints.length !== 3 || parsed.data.rubric.reduce((sum, c) => sum + c.points, 0) !== 10)
       throw new HttpError(502, 'The generated exercise failed quality checks. Try again.');
@@ -501,8 +518,7 @@ export function createApp(options: AppOptions = {}) {
         const catalog = allExercises(state).map(e => ({ id: e.id, moduleId: e.moduleId, title: e.title, difficulty: e.difficulty, minutes: e.minutes }));
         const completedModuleIds = curriculumModules.filter(module =>
           module.exerciseIds.every(id => state.progress[id]?.status === 'completed')).map(module => module.id);
-        const raw = await ai('plan', planInstructions, { profile: state.profile, progress: state.progress,
-          memories: recentMemories(state), latestDailyReview: recentReviews(state).at(-1) ?? null,
+        const raw = await ai('plan', planInstructions, { profile: profileDefaults(state.profile), progress: state.progress,
           completedModuleIds, candidateSchedule: fallbackPlan(state, '').weeks,
           modules: curriculumModules, exercises: catalog });
         plan = validatePlan(raw, state);
@@ -525,6 +541,7 @@ export function createApp(options: AppOptions = {}) {
   app.use((error: unknown, _req: Request, res: Response, _next: (error?: unknown) => void) => {
     if (res.headersSent) return;
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
+    if (error instanceof PersonalizationError) return res.status(error.status).json({ error: error.message, code: error.code });
     if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid data.' });
     const e = error as { type?: string; status?: number };
     if (e?.type === 'entity.too.large' || e?.status === 413) return res.status(413).json({ error: 'Request exceeds the 7 MB limit.' });

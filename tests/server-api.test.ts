@@ -9,11 +9,13 @@ import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/app.js';
 import { StateStore } from '../server/state.js';
 import { normalizeGeneratedMath, type AIAsk } from '../server/ai.js';
+import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
+import { fixtureLearningProvider } from './fixtures/learning.js';
 
-async function fixture(ai?: AIAsk) {
+async function fixture(ai?: AIAsk, personalizationProvider?: LearningAgentProvider) {
   const dir = await mkdtemp(join(tmpdir(), 'ari-test-'));
   const path = join(dir, 'state.sqlite');
-  const options = { dbPath: path, legacyStatePath: join(dir, 'legacy.json'), ai, aiConfigured: Boolean(ai), model: 'test' };
+  const options = { dbPath: path, legacyStatePath: join(dir, 'legacy.json'), ai, aiConfigured: Boolean(ai), personalizationProvider, model: 'test' };
   let app = createApp(options);
   let server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
@@ -33,6 +35,75 @@ async function fixture(ai?: AIAsk) {
   });
   return { path, dir, close, restart, request };
 }
+
+test('personalization REST edits, history and restores persist and reject stale writes', async () => {
+  const fx = await fixture();
+  try {
+    const view = await (await fx.request('/api/learning/personalization')).json();
+    assert.equal(view.onboarding.status, 'new');
+    const changed = await fx.request('/api/learning/personalization/file', 'PUT', { path: 'USER.md', content: '# Learner\nEnjoys drawing diagrams.', expectedHash: view.user.hash });
+    assert.equal(changed.status, 200);
+    const current = await changed.json();
+    assert.equal((await fx.request('/api/learning/personalization/file', 'PUT', { path: 'USER.md', content: 'Stale overwrite', expectedHash: view.user.hash })).status, 409);
+    const history = await (await fx.request('/api/learning/personalization/history?path=USER.md')).json();
+    assert.equal(history.revisions.length, 2);
+    const restored = await fx.request('/api/learning/personalization/restore', 'POST', { path: 'USER.md', revision: view.user.revision, expectedHash: current.hash });
+    assert.equal(restored.status, 200);
+    assert.equal((await restored.json()).content, view.user.content);
+    assert.equal((await fx.request('/api/learning/personalization/file?path=..%2Foutside.md')).status, 400);
+    await fx.request('/api/profile', 'PATCH', { goal: 'Understand constellations' });
+    let synced = await (await fx.request('/api/learning/personalization/file?path=USER.md')).json();
+    assert.match(synced.content, /Understand constellations/);
+    await fx.request('/api/profile', 'PATCH', { sessionMinutes: 30 });
+    synced = await (await fx.request('/api/learning/personalization/file?path=USER.md')).json();
+    assert.equal((synced.content.match(/Goal: Understand constellations/g) ?? []).length, 1);
+    await fx.restart();
+    assert.equal((await (await fx.request('/api/learning/personalization/file?path=USER.md')).json()).content, synced.content);
+    const finished = await fx.request('/api/learning/onboarding/complete', 'POST', {});
+    assert.equal(finished.status, 200);
+    assert.equal((await finished.json()).onboarding.status, 'complete');
+    assert.equal((await (await fx.request('/api/learning/onboarding/begin', 'POST', {})).json()).status, 'new');
+    assert.equal((await (await fx.request('/api/learning/onboarding/skip', 'POST', {})).json()).status, 'skipped');
+  } finally { await fx.close(); }
+});
+
+test('lesson and exercise tutoring reread edited personalization and exclude bulk legacy notes', async () => {
+  const seen: Array<{ instructions: string; payload: unknown }> = [];
+  const fx = await fixture(async (_task, instructions, payload) => { seen.push({ instructions, payload }); return tutorReply; });
+  try {
+    const view = await (await fx.request('/api/learning/personalization')).json();
+    await fx.request('/api/learning/personalization/file', 'PUT', { path: 'USER.md', content: '# Learner\nLikes geometric intuition.', expectedHash: view.user.hash });
+    await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: modules[0].id, message: 'Explain this idea.' });
+    assert.match(seen[0].instructions, /Likes geometric intuition/);
+    await fx.request('/api/learning/personalization/file', 'PUT', { path: 'TUTOR.md', content: '# Tutor\nUse concise diagrams before equations.', expectedHash: view.tutor.hash });
+    await fx.request('/api/profile', 'PATCH', { sessionMinutes: 30 });
+    await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'chat', message: 'Can you give a hint?' });
+    assert.match(seen[1].instructions, /Use concise diagrams before equations/);
+    assert.match(seen[1].instructions, /Likes geometric intuition/);
+    assert.doesNotMatch(seen[1].instructions, /Name: Learner|Goal: Explore a subject/);
+    for (const call of seen) {
+      assert.match(call.instructions, /<TUTOR.md>[\s\S]+<USER.md>/);
+      const payload = call.payload as Record<string, unknown>;
+      assert.equal(payload.memories, undefined);
+      assert.equal(payload.learnerNotes, undefined);
+    }
+  } finally { await fx.close(); }
+});
+
+test('tool-enabled tutoring preserves actionable provider errors without switching runners', async () => {
+  let code = 'CODEX_LIMIT', baseCalls = 0;
+  const provider = { ...fixtureLearningProvider(), run: async () => { throw new LearningProviderError(code, 'Synthetic provider failure.'); } };
+  const fx = await fixture(async () => { baseCalls++; return tutorReply; }, provider);
+  try {
+    for (const [nextCode, status] of [['CODEX_LIMIT', 503], ['CODEX_TIMEOUT', 504], ['CODEX_AUTH', 503], ['CODEX_RATE_LIMIT', 429], ['API_CREDITS', 503]] as const) {
+      code = nextCode;
+      const response = await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: modules[0].id, message: 'Explain this idea.' });
+      assert.equal(response.status, status);
+      assert.doesNotMatch((await response.json()).error, /Synthetic provider failure/);
+    }
+    assert.equal(baseCalls, 0);
+  } finally { await fx.close(); }
+});
 
 test('profile and progress persist with validated fields', async () => {
   const fx = await fixture();
@@ -366,10 +437,10 @@ test('reflection completes progress and keeps its photo with the journal record'
   } finally { await fx.close(); }
 });
 
-test('daily review uses dated evidence, is idempotent, and passes memories into chat and planning', async () => {
-  const seen: Array<{ task: string; payload: unknown }> = [];
-  const ai: AIAsk = async (task, _instructions, payload) => {
-    seen.push({ task, payload });
+test('daily review uses dated evidence, is idempotent, and stores observations for selective retrieval', async () => {
+  const seen: Array<{ task: string; payload: unknown; instructions: string }> = [];
+  const ai: AIAsk = async (task, instructions, payload) => {
+    seen.push({ task, payload, instructions });
     if (task === 'review') return { summary: 'One equation attempted and reflected on.', strengths: [], gaps: ['Units need review'],
       nextSteps: ['Try a stretch problem with a units check'], memories: ['Alex wants quicker difficulty progression but checks units carefully.'],
       recommendedModuleIds: [exercises[0].moduleId], pace: 'accelerate' };
@@ -400,8 +471,11 @@ test('daily review uses dated evidence, is idempotent, and passes memories into 
     const chatPayload = seen.filter(call => call.task === 'tutor').at(-1)!.payload as { memories: string[] };
     const planPayload = seen.find(call => call.task === 'plan')!.payload as { memories: string[]; completedModuleIds: string[];
       candidateSchedule: Array<{ sessions: Array<{ moduleId: string }> }> };
-    assert.deepEqual(chatPayload.memories, review.memories);
-    assert.deepEqual(planPayload.memories, review.memories);
+    assert.equal(chatPayload.memories, undefined);
+    assert.equal(planPayload.memories, undefined);
+    const note = await (await fx.request(`/api/learning/personalization/file?path=${encodeURIComponent(`memories/reviews/${review.date}-${review.id}.md`)}`)).json();
+    assert.match(note.content, /Alex wants quicker difficulty progression/);
+    for (const call of seen) { assert.match(call.instructions, /<TUTOR.md>[\s\S]+<USER.md>/); assert.doesNotMatch(call.instructions, /Alex wants quicker difficulty progression/); }
     assert.deepEqual(planPayload.completedModuleIds, []);
     assert.equal(planPayload.candidateSchedule[0].sessions[0].moduleId, exercises[0].moduleId);
     assert.match(plan.adjustment, /review informed/);
@@ -489,7 +563,7 @@ test('review rejects an empty local day and includes legacy progress in later ev
     assert.equal((await fx.request('/api/reviews/daily', 'POST', request)).status, 200);
     const evidence = calls[0] as { profile: { language: string; goal: string }; progress: Array<{ exerciseId: string; confidence: number }> };
     assert.equal(evidence.profile.language, 'en');
-    assert.ok(evidence.profile.goal);
+    assert.equal(evidence.profile.goal, undefined);
     assert.deepEqual(evidence.progress.map(item => [item.exerciseId, item.confidence]), [[exercises[0].id, 5]]);
   } finally { await fx.close(); }
 });
@@ -579,7 +653,7 @@ test('lesson conversation receives the actual lesson, remembers turns after rest
     assert.equal(seen[0].payload.lesson.summary, module.summary);
     assert.deepEqual(seen[0].payload.lesson.objectives, module.objectives);
     assert.deepEqual(seen[0].payload.lesson.prerequisites, module.prerequisites);
-    assert.deepEqual(seen[0].payload.profile, before.profile);
+    assert.deepEqual(seen[0].payload.profile, { language: before.profile.language, sessionMinutes: before.profile.sessionMinutes, sessionsPerWeek: before.profile.sessionsPerWeek });
     assert.deepEqual(seen[0].payload.history, []);
     assert.equal(seen[0].payload.exercise, undefined);
     assert.equal(JSON.stringify(seen[0].payload).includes('rubric'), false);
@@ -652,7 +726,7 @@ test('lesson request validation and AI failures leave no lesson exchange or prog
   finally { await offline.close(); }
 });
 
-test('lesson-only daily reviews use dated lesson evidence and pass its memories to subsequent lessons', async () => {
+test('lesson-only daily reviews use dated lesson evidence and keep observations out of unrelated lesson context', async () => {
   const seen: Array<{ task: string; payload: any }> = [];
   const fx = await fixture(async (task, _instructions, payload) => {
     seen.push({ task, payload });
@@ -675,7 +749,9 @@ test('lesson-only daily reviews use dated lesson evidence and pass its memories 
     assert.deepEqual(await (await fx.request('/api/reviews/daily', 'POST', input)).json(), review);
     assert.equal(seen.filter(call => call.task === 'review').length, 1);
     await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: modules[0].id, message: 'Another concept.' });
-    assert.deepEqual(seen.at(-1)!.payload.memories, review.memories);
+    assert.equal(seen.at(-1)!.payload.memories, undefined);
+    const note = await (await fx.request(`/api/learning/personalization/file?path=${encodeURIComponent(`memories/reviews/${review.date}-${review.id}.md`)}`)).json();
+    assert.match(note.content, /Prefers compass analogies/);
     const revised = await (await fx.request('/api/reviews/daily', 'POST', input)).json();
     assert.notEqual(revised.evidenceFingerprint, review.evidenceFingerprint);
     assert.equal(revised.evidenceLessonSessionIds.length, 2);

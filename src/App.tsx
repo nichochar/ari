@@ -1,11 +1,13 @@
+import { appStorage } from './storage';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight, BookOpen, Camera, Check, CheckCircle2, Download, Expand,
-  History, Menu, Minimize, Pause, Plus, RefreshCw, RotateCw, Send, Settings2,
+  History, Menu, Minimize, Pause, Plus, RefreshCw, RotateCw, Settings2,
   LampDesk, Target, Upload, X,
 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PageHeader } from './components/page-header';
+import { ChatComposer, ChatMessage, ChatWaiting } from './components/chat';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
@@ -22,7 +24,8 @@ import type {
 import { MAX_EXERCISE_PAGES } from '../shared/types';
 import { useCamera } from './useCamera';
 import { useLearning, learningApi, learningError } from './useLearning';
-import { MainConversation, LearnerMemoryEditor } from './Learning';
+import { MainConversation } from './Learning';
+import { PersonalizationSettings } from './Personalization';
 
 type View = 'desk' | 'path' | 'journal' | 'settings' | 'chat';
 type TutorMode = 'chat' | 'check';
@@ -43,7 +46,7 @@ const sidebarKey = 'ari:sidebarCollapsed';
 const viewKey = 'ari:view';
 const moduleKey = 'ari:selectedModuleId';
 const labels: Record<View, string> = {
-  desk: 'Study desk', path: 'Learning path', journal: 'Journal', settings: 'Settings', chat: 'Talk with ARI',
+  desk: 'Study desk', path: 'Learning path', journal: 'Journal', settings: 'Settings', chat: 'Talk with Ari',
 };
 
 async function api<T>(path: string, options?: RequestInit, timeout = 180000): Promise<T> {
@@ -106,9 +109,8 @@ function PhotoSet({ ids, label, onOpen }: {
     <Snapshot key={id + index} id={id} label={`${label} ${index + 1} of ${ids.length}`} onOpen={onOpen} />,
   )}</div>;
 }
-function TutorBubble({ response }: { response: TutorResponse }) {
-  return <div className="chat-bubble assistant-bubble">
-    <span className="bubble-label"><LampDesk size={14} /> Tutor</span>
+function TutorBubble({ response, createdAt }: { response: TutorResponse; createdAt: string }) {
+  return <ChatMessage author="assistant" createdAt={createdAt}>
     {response.observation && <div className="observation"><strong>What I can see:</strong><Markdown>{response.observation}</Markdown></div>}
     <Markdown>{response.feedback}</Markdown>
     {response.score !== null && <p className="score"><strong>Provisional score: {response.score}</strong></p>}
@@ -120,7 +122,7 @@ function TutorBubble({ response }: { response: TutorResponse }) {
     )}</div>}
     {response.nextStep && <div className="next-step"><strong>Next step:</strong><Markdown>{response.nextStep}</Markdown></div>}
     {response.question && <div className="tutor-question"><Markdown>{response.question}</Markdown></div>}
-  </div>;
+  </ChatMessage>;
 }
 
 // Full state reads may have started before a lesson reply arrived. Keep every
@@ -153,31 +155,23 @@ function LessonConversation({ sessions, outgoing, draft, onDraft, onSend, onRetr
     <div className="conversation" ref={paneRef} role="log" aria-label="Lesson conversation" aria-live="polite" aria-relevant="additions text"
       onScroll={event => { const node = event.currentTarget; followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
       {entries.length ? entries.map(entry => <div className={'exchange ' + (entry.outgoing ? 'outgoing-exchange' : '')} key={entry.id}>
-        <div className="chat-bubble user-bubble"><span className="bubble-label">You · {formatDate(entry.createdAt)}</span>
+        <ChatMessage author="user" createdAt={entry.createdAt} arriving={!!entry.outgoing}>
           <Markdown>{entry.session ? entry.session.requestText : entry.outgoing!.request.message}</Markdown>
-        </div>
-        {entry.session ? <TutorBubble response={entry.session.response} />
-          : entry.outgoing?.status === 'sending' ? <div className="chat-bubble assistant-bubble tutor-waiting" role="status">
-            <LampLoader /><span>ARI is thinking</span>
-          </div> : entry.outgoing && <div className="message-error" role="alert"><p>{entry.outgoing.error}</p>
+        </ChatMessage>
+        {entry.session ? <TutorBubble response={entry.session.response} createdAt={entry.session.createdAt} />
+          : entry.outgoing?.status === 'sending' ? <ChatWaiting /> : entry.outgoing && <div className="message-error" role="alert"><p>{entry.outgoing.error}</p>
             <Button variant="ghost" onClick={() => onRetry(entry.outgoing!)}><RefreshCw size={14} /> Retry message</Button>
           </div>}
       </div>) : <div className="conversation-empty"><LampDesk size={20} /><p>Ask about this lesson.</p></div>}
     </div>
-    <div className="composer">
-      <Textarea value={draft} onChange={event => onDraft(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onSend(); } }}
-        aria-label="Question about this lesson" placeholder="What would you like to understand?" rows={2} maxLength={4000} />
-      <div className="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>
-        <Button variant="primary" disabled={pending || !draft.trim()} onClick={onSend}>Send <Send size={16} /></Button>
-      </div>
-    </div>
+    <ChatComposer value={draft} onChange={onDraft} onSend={onSend} sendDisabled={pending || !draft.trim()}
+      label="Question about this lesson" placeholder="What would you like to understand?" maxLength={4000} />
   </div>;
 }
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
-    const saved = localStorage.getItem(viewKey);
+    const saved = appStorage.getItem(viewKey);
     return saved && Object.hasOwn(labels, saved) ? saved as View : 'desk';
   });
   const [state, setState] = useState<AppState | null>(null);
@@ -185,16 +179,26 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const selectedIdRef = useRef('');
-  const restoredExerciseRef = useRef(localStorage.getItem(selectedKey));
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem(sidebarKey) === 'true');
+  const restoredExerciseRef = useRef(appStorage.getItem(selectedKey));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => appStorage.getItem(sidebarKey) === 'true');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [selectedModuleId, setSelectedModuleId] = useState(() => {
-    const saved = localStorage.getItem(moduleKey);
+    const saved = appStorage.getItem(moduleKey);
     return saved || courseModules[0]?.id || '';
   });
   const learning = useLearning(view === 'chat', view !== 'desk');
-  const [curriculumId, setCurriculumId] = useState(() => localStorage.getItem('ari:curriculum') || '');
-  const [chatFocusId, setChatFocusId] = useState(() => localStorage.getItem('ari:chatFocus') || '');
+  const onboardingNavigationChecked = useRef(false);
+  useEffect(() => {
+    if (!learning.data || onboardingNavigationChecked.current) return;
+    onboardingNavigationChecked.current = true;
+    const onboarding = learning.data.personalization?.onboarding;
+    if (onboarding?.status === 'new' && appStorage.getItem('ari:onboardingOpenedAt') !== onboarding.updatedAt) {
+      appStorage.setItem('ari:onboardingOpenedAt', onboarding.updatedAt);
+      setChatFocusId(''); setView('chat');
+    }
+  }, [learning.data]);
+  const [curriculumId, setCurriculumId] = useState(() => appStorage.getItem('ari:curriculum') || '');
+  const [chatFocusId, setChatFocusId] = useState(() => appStorage.getItem('ari:chatFocus') || '');
   const [chatStarter, setChatStarter] = useState('');
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [pathTab, setPathTab] = useState<'lessons' | 'plan'>('lessons');
@@ -250,14 +254,14 @@ export default function App() {
         api<{ available: boolean }>('/api/camera/status', undefined, 10000).catch(() => ({ available: false })),
       ]);
       const catalog = [...curated, ...next.generatedExercises];
-      const saved = localStorage.getItem(selectedKey);
+      const saved = appStorage.getItem(selectedKey);
       const nextId = saved && catalog.some(item => item.id === saved)
         ? saved
         : diagnosticIds.find(id => next.progress[id]?.status !== 'completed')
           || catalog.find(item => next.progress[item.id]?.status !== 'completed')?.id
           || catalog[0]?.id || '';
       selectedIdRef.current = nextId;
-      if (nextId) localStorage.setItem(selectedKey, nextId);
+      if (nextId) appStorage.setItem(selectedKey, nextId);
       setSelectedId(nextId);
       setState(current => ({ ...next, lessonSessions: mergeLessonSessions(current?.lessonSessions, next.lessonSessions) }));
       setHealth(nextHealth);
@@ -268,12 +272,12 @@ export default function App() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { localStorage.setItem(sidebarKey, String(sidebarCollapsed)); }, [sidebarCollapsed]);
-  useEffect(() => { localStorage.setItem(viewKey, view); }, [view]);
+  useEffect(() => { appStorage.setItem(sidebarKey, String(sidebarCollapsed)); }, [sidebarCollapsed]);
+  useEffect(() => { appStorage.setItem(viewKey, view); }, [view]);
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view]);
-  useEffect(() => { localStorage.setItem(moduleKey, selectedModuleId); }, [selectedModuleId]);
-  useEffect(() => { localStorage.setItem('ari:curriculum', curriculumId); }, [curriculumId]);
-  useEffect(() => { localStorage.setItem('ari:chatFocus', chatFocusId); }, [chatFocusId]);
+  useEffect(() => { appStorage.setItem(moduleKey, selectedModuleId); }, [selectedModuleId]);
+  useEffect(() => { appStorage.setItem('ari:curriculum', curriculumId); }, [curriculumId]);
+  useEffect(() => { appStorage.setItem('ari:chatFocus', chatFocusId); }, [chatFocusId]);
   const learningIdle = useRef(learning.idle);
   learningIdle.current = learning.idle;
   const boundaryRef = useRef({ view, selectedId });
@@ -337,7 +341,7 @@ export default function App() {
   useEffect(() => { if (learning.data && selectedModule && selectedModule.id !== selectedModuleId) setSelectedModuleId(selectedModule.id); }, [learning.data, selectedModule, selectedModuleId]);
   useEffect(() => {
     const saved = restoredExerciseRef.current;
-    if (saved && learning.data?.exercises.some(item => item.id === saved)) { setSelectedId(saved); selectedIdRef.current = saved; localStorage.setItem(selectedKey, saved); restoredExerciseRef.current = null; }
+    if (saved && learning.data?.exercises.some(item => item.id === saved)) { setSelectedId(saved); selectedIdRef.current = saved; appStorage.setItem(selectedKey, saved); restoredExerciseRef.current = null; }
   }, [learning.data?.exercises]);
   const lessonSessions = useMemo(() => (state?.lessonSessions || []).filter(item => item.moduleId === selectedModuleId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [state?.lessonSessions, selectedModuleId]);
@@ -396,7 +400,7 @@ export default function App() {
     uploadReadRef.current++;
     selectedIdRef.current = id;
     setSelectedId(id);
-    localStorage.setItem(selectedKey, id);
+    appStorage.setItem(selectedKey, id);
     setView('desk');
     setMobileMenu(false);
     setDraft('');
@@ -711,7 +715,11 @@ export default function App() {
     setProfileBusy(true);
     setProfileMessage('');
     try {
-      const profile = await post<Profile>('/api/profile', profileDraft, 'PATCH');
+      const profile = await post<Profile>('/api/profile', {
+        sessionMinutes: profileDraft.sessionMinutes,
+        sessionsPerWeek: profileDraft.sessionsPerWeek,
+        language: profileDraft.language,
+      }, 'PATCH');
       setState(current => current ? { ...current, profile } : current);
       setProfileDraft(profile);
       setProfileMessage('Preferences saved.');
@@ -742,7 +750,7 @@ export default function App() {
 
   return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenu ? 'sidebar-open' : '')}>
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><LampLoader size={42} /></span><strong>A<span className="brand-middle">R</span>I</strong></div>
+      <div className="brand"><span className="brand-mark" aria-hidden="true"><LampLoader size={42} /></span><strong>A<span className="brand-middle">r</span>i</strong></div>
       <Button variant="plain" className="collapse-button" onClick={() => setSidebarCollapsed(value => !value)}
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><Menu size={19} /></Button>
@@ -750,13 +758,13 @@ export default function App() {
         {(['desk', 'chat', 'path', 'journal', 'settings'] as View[]).map(item =>
           <Button variant="plain" key={item} title={labels[item]} aria-label={labels[item]}
             className={'nav-item ' + (view === item ? 'active' : '')}
-            onClick={() => { if (item !== 'desk') gradeCaptureRef.current?.abort(); setView(item); setMobileMenu(false); setActionError(''); }}>
+            onClick={() => { onboardingNavigationChecked.current = true; if (item !== 'desk') gradeCaptureRef.current?.abort(); setView(item); setMobileMenu(false); setActionError(''); }}>
             {navIcon(item)}<span>{labels[item]}</span>{(item === 'chat' || item === 'path') && !!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}
           </Button>,
         )}
       </nav>
       <div className="sidebar-foot">
-        <span className="learner-name">{state.profile.name || 'Learner'}</span>
+        <span className="learner-name">{state.profile.name && state.profile.name !== 'Learner' ? state.profile.name : 'Your learning'}</span>
         <span className="completion-count"><CheckCircle2 size={13} aria-hidden="true" />
           <span><strong>{completedCount}</strong> {completedCount === 1 ? 'exercise' : 'exercises'} completed</span>
         </span>
@@ -782,21 +790,19 @@ export default function App() {
               <div className="conversation" ref={conversationRef} role="log" aria-label="Exercise conversation" aria-live="polite" aria-relevant="additions text"
                 onScroll={event => { const node = event.currentTarget; shouldFollowConversation.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
                 {conversation.length ? conversation.map(({ id, createdAt, session, outgoing }) => session ? <div className="exchange" key={id}>
-                  <div className="chat-bubble user-bubble"><span className="bubble-label">You · {formatDate(session.createdAt)}</span>
+                  <ChatMessage author="user" createdAt={session.createdAt}>
                     <p>{session.requestText || (photoIds(session).length ? 'Photo of my work' : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
                     <PhotoSet ids={photoIds(session)} label="Submitted work" onOpen={openPhoto} />
-                  </div>
-                  <TutorBubble response={session.response} />
+                  </ChatMessage>
+                  <TutorBubble response={session.response} createdAt={session.createdAt} />
                 </div> : outgoing && <div className="exchange outgoing-exchange" key={id}>
-                  <div className="chat-bubble user-bubble"><span className="bubble-label">You · {formatDate(createdAt)}</span>
+                  <ChatMessage author="user" createdAt={createdAt} arriving>
                     <p>{outgoing.request.message || (outgoing.pageSnapshotIds.length || outgoing.request.image ? 'Photo of my work' : 'Grade my work')}</p>
                     <PhotoSet ids={[...outgoing.pageSnapshotIds, ...(outgoing.request.image ? [outgoing.request.image] : [])]}
                       label="Submitted work" onOpen={openPhoto} />
-                  </div>
-                  {outgoing.status === 'sending' && <div className="chat-bubble assistant-bubble tutor-waiting" role="status">
-                    <LampLoader /><span>ARI is thinking</span>
-                  </div>}
-                  {outgoing.response && <TutorBubble response={outgoing.response} />}
+                  </ChatMessage>
+                  {outgoing.status === 'sending' && <ChatWaiting />}
+                  {outgoing.response && <TutorBubble response={outgoing.response} createdAt={createdAt} />}
                   {outgoing.error && <div className="message-error" role="alert"><p>{outgoing.error}</p>
                     <Button variant="ghost" disabled={!!sendMode || !!pageBusy} onClick={() => void (outgoing.status === 'saved'
                       ? syncMessage(outgoing) : deliverMessage(outgoing))}>
@@ -807,24 +813,18 @@ export default function App() {
                   <p>Ask a question or share your paper.</p>
                 </div>}
               </div>
-              <div className="composer">
-                {(pages.length > 0 || camera.active || uploadedImage) && <p className="composer-attachment"><Camera size={14} aria-hidden="true" />
+              <ChatComposer inputRef={composerRef} value={draft} onChange={setDraft} onSend={() => void send('chat')}
+                sendDisabled={!!sendMode || !!pageBusy || reflectionBusy} label="Message to tutor"
+                placeholder="Ask a question or describe your reasoning…" maxLength={4000}
+                beforeInput={(pages.length > 0 || camera.active || uploadedImage) && <p className="composer-attachment"><Camera size={14} aria-hidden="true" />
                   {pages.length ? `${pages.length} saved ${pages.length === 1 ? 'page' : 'pages'}${camera.active || uploadedImage ? ' + current view' : ' · Grade my work will capture the current view'}.`
                     : uploadedImage ? 'This photo is included with every message.' : 'A fresh photo of your paper is included with every message.'}
                 </p>}
-                <Textarea ref={composerRef} value={draft} onChange={event => setDraft(event.target.value)}
-                  onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send('chat'); } }}
-                  aria-label="Message to tutor" placeholder="Ask a question or describe your reasoning…"
-                  rows={3} maxLength={4000} />
-                <div className="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>
-                  <Button variant="secondary" disabled={!!sendMode || !!pageBusy || reflectionBusy} onClick={() => void send('check')}>
-                    {preparingGrade ? 'Connecting camera…' : 'Grade my work'}</Button>
-                  <Button variant="primary" disabled={!!sendMode || !!pageBusy || reflectionBusy} onClick={() => void send('chat')}>
-                    Send <Send size={16} /></Button>
-                </div>
+                actions={<Button variant="secondary" disabled={!!sendMode || !!pageBusy || reflectionBusy} onClick={() => void send('check')}>
+                  {preparingGrade ? 'Connecting camera…' : 'Grade my work'}</Button>}>
                 {preparingGrade && <p className="status-line loading-status" role="status"><LampLoader size={28} />Connecting to your camera and waiting for your paper…</p>}
                 {sendError && <p className="inline-error" role="alert">{sendError}</p>}
-              </div>
+              </ChatComposer>
             </div>
           </div>
           <div className="work-column">
@@ -947,7 +947,7 @@ export default function App() {
       </section>}
       {view === 'chat' && <section className="page">
         {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
-          : <><PageHeader title="Talk with ARI" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
+          : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
             {learning.error ? <LampDesk size={30} /> : <LampLoader size={72} />}
             <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
             {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
@@ -956,7 +956,7 @@ export default function App() {
       </section>}
       {view === 'path' && <section className="page">
         <PageHeader title="Learning path" description="Choose a lesson, or explore what you want to learn next." />
-        <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-lamp"><LampDesk size={25} strokeWidth={1.5} /></span><span><strong>Talk with ARI</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
+        <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-lamp"><LampDesk size={25} strokeWidth={1.5} /></span><span><strong>Talk with Ari</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
         {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { setChatFocusId(''); setChatStarter('I’d like to learn a new subject. '); setView('chat'); }}><Plus size={14} />Explore a new subject</Button></div>}
         <div className="tab-row"><Button variant="plain" className={pathTab === 'lessons' ? 'selected' : ''} onClick={() => setPathTab('lessons')}>All lessons</Button>
           {(!activeCurriculum || activeCurriculum.source === 'original') && <Button variant="plain" className={pathTab === 'plan' ? 'selected' : ''} onClick={() => setPathTab('plan')}>Your plan</Button>}</div>
@@ -977,7 +977,7 @@ export default function App() {
           </Button>; })}</div>
           {selectedModule && <article className="module-detail"><span className="eyebrow">{activeCurriculum?.source === 'generated' ? `${activeCurriculum.topic} · ${selectedLesson?.status || 'planned'}` : `SHORT LESSON · PHASE ${selectedModule.phase}`}</span>
             <h2>{selectedModule.title}</h2><em>{selectedModule.frenchTitle}</em><p>{selectedModule.summary}</p>
-            {selectedLesson && selectedLesson.status !== 'ready' ? <div className="lesson-preparation">{prepareBusy || selectedLesson.status === 'preparing' ? <LampLoader size={48} /> : <LampDesk size={24} />}<h3>{selectedLesson.status === 'preparing' ? 'ARI is preparing this lesson' : selectedLesson.status === 'failed' ? 'This lesson needs another try' : 'Ready when you are'}</h3><p>{selectedLesson.status === 'preparing' ? 'Its explanation and exercises will appear here. You can leave this page while ARI works.' : 'ARI will prepare this lesson and tailored exercises from your learning path and recent work.'}</p>{selectedLesson.error && <p className="inline-error">{selectedLesson.error}</p>}<Button variant="primary" disabled={prepareBusy || selectedLesson.status === 'preparing'} onClick={() => void prepareLesson()}>{prepareBusy || selectedLesson.status === 'preparing' ? 'Preparing…' : selectedLesson.status === 'failed' ? 'Retry preparation' : 'Prepare lesson'}<ArrowRight size={15} /></Button></div> : <Markdown>{selectedModule.primer}</Markdown>}
+            {selectedLesson && selectedLesson.status !== 'ready' ? <div className="lesson-preparation">{prepareBusy || selectedLesson.status === 'preparing' ? <LampLoader size={48} /> : <LampDesk size={24} />}<h3>{selectedLesson.status === 'preparing' ? 'Ari is preparing this lesson' : selectedLesson.status === 'failed' ? 'This lesson needs another try' : 'Ready when you are'}</h3><p>{selectedLesson.status === 'preparing' ? 'Its explanation and exercises will appear here. You can leave this page while Ari works.' : 'Ari will prepare this lesson and tailored exercises from your learning path and recent work.'}</p>{selectedLesson.error && <p className="inline-error">{selectedLesson.error}</p>}<Button variant="primary" disabled={prepareBusy || selectedLesson.status === 'preparing'} onClick={() => void prepareLesson()}>{prepareBusy || selectedLesson.status === 'preparing' ? 'Preparing…' : selectedLesson.status === 'failed' ? 'Retry preparation' : 'Prepare lesson'}<ArrowRight size={15} /></Button></div> : <Markdown>{selectedModule.primer}</Markdown>}
             {(!selectedLesson || selectedLesson.status === 'ready') && <>
             <LessonConversation key={selectedModule.id} sessions={lessonSessions} outgoing={lessonOutgoing}
               draft={lessonDrafts[selectedModule.id] || ''}
@@ -1058,11 +1058,13 @@ export default function App() {
               const linked = catalog.find(candidate => candidate.id === session.exerciseId);
               return <article className="journal-entry" key={session.id}>
                 <Button variant="plain" className="entry-title" onClick={() => selectExercise(session.exerciseId)}>{linked?.title || session.exerciseId} <ArrowRight size={15} /></Button>
-                <small>{formatDate(session.createdAt)} · {session.mode}</small>
-                <p><strong>You:</strong> {session.requestText || (photoIds(session).length ? 'Photo of work' : 'No text')}</p>
-                {photoIds(session).length ? <PhotoSet ids={photoIds(session)} label="Submitted work" onOpen={openPhoto} />
-                  : <small>No photo was saved with this exchange.</small>}
-                <div className="journal-tutor"><TutorBubble response={session.response} /></div>
+                <div className="exchange journal-conversation">
+                  <ChatMessage author="user" createdAt={session.createdAt}>
+                    <p>{session.requestText || (photoIds(session).length ? 'Photo of my work' : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
+                    <PhotoSet ids={photoIds(session)} label="Submitted work" onOpen={openPhoto} />
+                  </ChatMessage>
+                  <TutorBubble response={session.response} createdAt={session.createdAt} />
+                </div>
               </article>;
             }) : <p>Your exercise conversations will appear here.</p>}
           </div>
@@ -1071,9 +1073,10 @@ export default function App() {
               const linked = allModules.find(module => module.id === session.moduleId);
               return <article className="journal-entry" key={session.id}>
                 <Button variant="plain" className="entry-title" onClick={() => showLesson(session.moduleId)}>{linked?.title || session.moduleId} <ArrowRight size={15} /></Button>
-                <small>{formatDate(session.createdAt)}</small>
-                <div className="journal-lesson-question"><strong>You:</strong><Markdown>{session.requestText}</Markdown></div>
-                <div className="journal-tutor"><TutorBubble response={session.response} /></div>
+                <div className="exchange journal-conversation">
+                  <ChatMessage author="user" createdAt={session.createdAt}><Markdown>{session.requestText}</Markdown></ChatMessage>
+                  <TutorBubble response={session.response} createdAt={session.createdAt} />
+                </div>
               </article>;
             })}
           </div>}
@@ -1082,11 +1085,8 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'settings' && profileDraft && <section className="page">
-        <PageHeader title="Settings" description="Set your pace and goal for future plans." />
-        <div className="settings-form"><label>Your name<Input value={profileDraft.name}
-          onChange={event => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
-          <label>Your goal<Textarea rows={3} value={profileDraft.goal}
-            onChange={event => setProfileDraft({ ...profileDraft, goal: event.target.value })} /></label>
+        <PageHeader title="Settings" description="Shape your tutor, goals and study pace." />
+        <div className="settings-form">
           <div className="two-fields"><label>Minutes per session<Input type="number" min="10" max="180"
             value={profileDraft.sessionMinutes} onChange={event => setProfileDraft({ ...profileDraft, sessionMinutes: Number(event.target.value) })} /></label>
             <label>Sessions each week<Input type="number" min="1" max="7" value={profileDraft.sessionsPerWeek}
@@ -1098,7 +1098,7 @@ export default function App() {
             {profileBusy ? 'Saving…' : 'Save preferences'}</Button>
           {profileMessage && <p className="status-line" role="status">{profileMessage}</p>}
         </div>
-        {learning.data && <LearnerMemoryEditor data={learning.data} refresh={learning.refresh} />}
+        {learning.data && <PersonalizationSettings data={learning.data.personalization} refresh={learning.refresh} discuss={text => { setChatStarter(text); setChatFocusId(''); setView('chat'); }} />}
       </section>}
     </main>
     <Dialog open={!!photoOpen} onOpenChange={open => { if (!open) setPhotoOpen(null); }}>

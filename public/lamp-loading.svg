@@ -15,7 +15,7 @@
   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 28" width="96" height="74.66666666666667" class="ari-lamp-loader" fill="none" focusable="false" role="img" aria-label="ARI is thinking"><style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 28" width="96" height="74.66666666666667" class="ari-lamp-loader" fill="none" focusable="false" role="img" aria-label="Ari is thinking"><style>
       .ari-lamp-loader { display: inline-block; flex: none; vertical-align: middle; }
       .ari-lamp-loader .ari-lamp-light { opacity: .4; animation: ari-lamp-breathe 2.8s cubic-bezier(.45,0,.55,1) infinite; }
       @keyframes ari-lamp-breathe { 0%, 100% { opacity: .32; } 50% { opacity: .85; } }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Markdown, normalizeMathDelimiters } from '../src/Markdown';
+import { Markdown, normalizeMathDelimiters, workspaceDocumentPath } from '../src/Markdown';
 
 function render(source: string) {
   const html = renderToStaticMarkup(createElement(Markdown, { children: source }));
@@ -13,6 +13,25 @@ function render(source: string) {
 function mathCount(html: string) {
   return (html.match(/class="katex"/g) ?? []).length;
 }
+
+test('workspace references accept only core documents and scoped Markdown paths', () => {
+  for (const path of ['USER.md', 'TUTOR.md', 'memories/photography/field-notes.md', 'memories/2026-10-18.md']) assert.equal(workspaceDocumentPath(path), path);
+  assert.equal(workspaceDocumentPath('./memories/subject/lesson.md'), 'memories/subject/lesson.md');
+  for (const path of [undefined, '', '/USER.md', '../USER.md', 'memories/../USER.md', 'memories/.hidden.md', 'memories/folder./note.md', 'memories/note.txt', 'memories/note.md?extra=1', 'memories/note.md#anchor', 'memories/%2e%2e/USER.md', 'memories\\note.md', 'file:///USER.md', 'https://example.com/memories/note.md', '//example.com/USER.md', 'memories/' + 'a'.repeat(500) + '.md']) assert.equal(workspaceDocumentPath(path), null, String(path));
+});
+
+test('saved-note references render accessible dialog controls while web links remain anchors', () => {
+  const html = render('[saved note](memories/photography/field-notes.md) and [website](https://example.com/notes)');
+  assert.match(html, /<button[^>]+class="[^"]*workspace-document-link/);
+  assert.match(html, /aria-haspopup="dialog"/);
+  assert.doesNotMatch(html, /href="memories\//);
+  assert.match(html, /<a href="https:\/\/example.com\/notes">website<\/a>/);
+  // Rendering a note does not recursively create note dialogs or dead local links.
+  const readOnly = renderToStaticMarkup(createElement(Markdown, { children: '[another note](USER.md) and [web](https://example.com)', workspaceLinks: false }));
+  assert.match(readOnly, /<span title="USER.md">another note<\/span>/);
+  assert.doesNotMatch(readOnly, /workspace-document-link|href="USER.md"/);
+  assert.match(readOnly, /<a href="https:\/\/example.com">web<\/a>/);
+});
 
 test('standard LaTeX inline and same-line display delimiters render through KaTeX', () => {
   const html = render(String.raw`Use \(\Delta=b^2-4ac\), then \[t=\frac{-b\pm\sqrt\Delta}{2a}\] to find the roots.`);

@@ -4,7 +4,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
 import { LampLoader } from './lamp-loader';
 
-// Adapted from shadcn/ui's Base UI button, with ARI's sizes and semantic classes.
+// Adapted from shadcn/ui's Base UI button, with Ari's sizes and semantic classes.
 // https://ui.shadcn.com/r/styles/base-nova/button.json
 const buttonVariants = cva('ui-button', {
   variants: {

@@ -58,6 +58,16 @@ test('privacy guard reads staged credentials even after the working file is fixe
   assert.ok(!result.stderr.includes(fake), 'must not print credentials');
 });
 
+test('privacy guard rejects personalization documents and workspace exports', t => {
+  const f = fixture(t);
+  const paths = ['TUTOR.md', 'memories/learning.md', 'export.workspace/notes.md', '.ari-workspace.json'];
+  for (const path of paths) f.write(path, 'Synthetic private personalization');
+  f.git('add', '-f', ...paths);
+  const result = f.check('--staged');
+  assert.equal(result.status, 1);
+  for (const path of paths) assert.ok(result.stderr.includes(path));
+});
+
 test('history and push checks catch a credential deleted by a later commit', t => {
   const f = fixture(t);
   f.write('config.ts', 'const key = "' + 'ghp_' + 'x'.repeat(36) + '";');

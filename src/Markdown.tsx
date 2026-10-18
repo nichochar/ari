@@ -1,7 +1,45 @@
+import { useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
+import type { PersonalizationRead } from '../shared/personalization';
+import { Button } from './components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from './components/ui/dialog';
+import { learningApi, learningError } from './useLearning';
+
+/** Match the workspace's public relative-path rules without resolving arbitrary URLs. */
+export function workspaceDocumentPath(href: string | undefined): string | null {
+  if (!href) return null;
+  const path = href.startsWith('./') ? href.slice(2) : href;
+  if (path.length > 500) return null;
+  if (path === 'TUTOR.md' || path === 'USER.md') return path;
+  const parts = path.split('/');
+  return parts.length > 1 && parts[0] === 'memories' && parts.at(-1)!.endsWith('.md') &&
+    parts.every(part => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(part) && !part.endsWith('.')) ? path : null;
+}
+
+function WorkspaceDocumentLink({ path, title, children }: { path: string; title?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false), [document, setDocument] = useState<PersonalizationRead | null>(null), [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setDocument(null); setError('');
+    void learningApi<PersonalizationRead>('/personalization/file?path=' + encodeURIComponent(path) + '&limit=64000')
+      .then(result => { if (active) setDocument(result); })
+      .catch(failure => { if (active) setError(learningError(failure)); });
+    return () => { active = false; };
+  }, [open, path, attempt]);
+  return <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger title={title || 'Read ' + path} render={<Button variant="plain" className="workspace-document-link" />}>{children}</DialogTrigger>
+    <DialogContent className="workspace-document-dialog"><DialogTitle>{path}</DialogTitle><DialogDescription>A saved learning note. You can discuss changes with Ari.</DialogDescription>
+      {document ? <div className="workspace-document-content"><Markdown workspaceLinks={false}>{document.content}</Markdown>{document.truncated && <p className="memory-description">Showing the first part of this note. Ask Ari to read more.</p>}</div>
+        : error ? <div><p className="inline-error" role="alert">{error}</p><Button variant="secondary" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div>
+          : <p className="memory-description" role="status">Opening saved note…</p>}
+    </DialogContent>
+  </Dialog>;
+}
 
 function isEscaped(source: string, position: number) {
   let slashes = 0;
@@ -97,11 +135,18 @@ export function normalizeMathDelimiters(source: string): string {
   return result;
 }
 
-export function Markdown({ children }: { children: string }) {
+export function Markdown({ children, workspaceLinks = true }: { children: string; workspaceLinks?: boolean }) {
   return <div className="markdown"><ReactMarkdown
     remarkPlugins={[remarkGfm, remarkMath]}
     rehypePlugins={[rehypeKatex]}
     components={{
+      a: ({ href, title, children }) => {
+        const path = workspaceDocumentPath(href);
+        if (!path) return <a href={href} title={title}>{children}</a>;
+        // A note's own workspace references stay text, preventing nested dialogs
+        // and accidental navigation while reading the original reference.
+        return workspaceLinks ? <WorkspaceDocumentLink path={path} title={title}>{children}</WorkspaceDocumentLink> : <span title={path}>{children}</span>;
+      },
       table: ({ children }) => <div className="markdown-table" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
     }}
   >{normalizeMathDelimiters(children)}</ReactMarkdown></div>;

@@ -8,6 +8,10 @@ export interface LearningTool {
 }
 export interface LearningAgentRequest {
   instructions: string; input: unknown[]; tools: LearningTool[];
+  refreshInstructions?: () => Promise<string>;
+  /** A structured final answer may still be preceded by tool calls. */
+  outputSchema?: Record<string, unknown>;
+  ephemeral?: boolean;
   /** Stable app run identity for provider-owned conversation recovery. */
   runKey?: string;
   /** Completed text from this turn, retained even when compaction folds it away. */
@@ -37,10 +41,10 @@ export function learningProviderError(error: unknown): LearningProviderError {
     return new LearningProviderError('API_CREDITS', 'OpenAI API credits are exhausted. Add credits, then retry this message.');
   if (e?.status === 401 || e?.status === 403)
     return new LearningProviderError('API_AUTH', 'The OpenAI API connection is not authorized. Check the server API key.');
-  if (e?.status === 429) return new LearningProviderError('API_RATE_LIMIT', 'ARI is temporarily rate limited. Retry shortly.');
+  if (e?.status === 429) return new LearningProviderError('API_RATE_LIMIT', 'Ari is temporarily rate limited. Retry shortly.');
   if (e?.name === 'APIConnectionTimeoutError' || e?.name === 'AbortError')
-    return new LearningProviderError('API_TIMEOUT', 'ARI took too long to respond. Your message is saved; retry to continue.');
-  return new LearningProviderError('API_FAILED', 'ARI could not finish this response. Your message is saved; retry to continue.');
+    return new LearningProviderError('API_TIMEOUT', 'Ari took too long to respond. Your message is saved; retry to continue.');
+  return new LearningProviderError('API_FAILED', 'Ari could not finish this response. Your message is saved; retry to continue.');
 }
 
 type Item = Record<string, unknown>;
@@ -91,13 +95,23 @@ function responseText(response: Response): string {
   return links.length ? `${text}\n\nSources: ${links.join(' · ')}` : text;
 }
 
+/** Structured output belongs to the final assistant message, not earlier commentary. */
+function structuredResponseText(output: unknown[]): string {
+  const message = output.map(item).reverse().find(value => value.type === 'message' && value.role === 'assistant');
+  if (typeof message?.content === 'string') return message.content;
+  return Array.isArray(message?.content) ? message.content.map(item)
+    .filter(part => part.type === 'output_text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
+}
+
 /** Stateless Responses with durable input items; no implicit model/provider fallback. */
 export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
-  client = apiKey ? new OpenAI({ apiKey, timeout: 180_000, maxRetries: 0 }) : undefined): LearningAgentProvider | undefined {
+  client = apiKey ? new OpenAI({ apiKey, timeout: 180_000, maxRetries: 0 }) : undefined,
+  options: { model?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' } = {}): LearningAgentProvider | undefined {
   if (!apiKey || !client) return undefined;
-  const model = process.env.OPENAI_MAIN_MODEL || 'gpt-6-astra';
+  const model = options.model ?? (process.env.OPENAI_MAIN_MODEL || 'gpt-6-astra');
+  const effort = options.reasoningEffort ?? 'high';
   return {
-    model: `${model} · high`,
+    model: `${model} · ${effort}`,
     async run(request) {
       const context = structuredClone(request.input);
       const start = context.length;
@@ -145,33 +159,36 @@ export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
         const completedCalls = new Set(context.filter(value => item(value).type === 'function_call_output').map(value => item(value).call_id));
         const hasPendingCall = context.some(value => item(value).type === 'function_call' && !completedCalls.has(item(value).call_id));
         if (!hasPendingCall && previousText && last.type === 'message' && last.role === 'assistant' && last.status === 'completed')
-          return { output: [], text: previousText, inputTokens, context };
+          return { output: [], text: request.outputSchema ? structuredResponseText(context) : previousText, inputTokens, context };
         // A server restart may have happened after saving a model tool call.
         // The application replays its saved result by call_id, making this safe.
         await finishPendingCalls();
         for (let round = 0; round < 12; round++) {
+          const instructions = await request.refreshInstructions?.() ?? request.instructions;
           if (round > 0 && texts.length) await request.onText?.('\n\n');
           if (inputTokens >= learningCompactionThreshold()) {
-            const compacted = await client.responses.compact({ model, input: context as ResponseInputItem[], instructions: request.instructions });
+            const compacted = await client.responses.compact({ model, input: context as ResponseInputItem[], instructions });
             if (!compacted.output.some(output => output.type === 'compaction'))
-              throw new LearningProviderError('COMPACTION_FAILED', 'ARI could not compact this conversation. Its full history is still saved.');
+              throw new LearningProviderError('COMPACTION_FAILED', 'Ari could not compact this conversation. Its full history is still saved.');
             context.splice(0, context.length, ...compacted.output);
             inputTokens = estimateTokens(context);
             await checkpoint();
           }
           const stream = await client.responses.create({
-            model, reasoning: { effort: 'high' }, instructions: request.instructions,
+            model, reasoning: { effort }, instructions,
             input: context as ResponseInputItem[], store: false, stream: true,
             include: ['reasoning.encrypted_content'], max_output_tokens: 12_000,
             tools: [...request.tools.map(tool => ({ ...tool, parameters: providerSchema(tool.parameters) })), { type: 'web_search' }] as Tool[],
             parallel_tool_calls: false,
+            ...(request.outputSchema ? { text: { format: { type: 'json_schema' as const, name: 'ari_tutor', strict: true,
+              schema: providerSchema(request.outputSchema) as Record<string, unknown> } } } : {}),
           });
           let response: Response | undefined;
           for await (const event of stream) {
             if (event.type === 'response.output_text.delta') await request.onText?.(event.delta);
             if (event.type === 'response.completed') response = event.response;
             if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error')
-              throw new LearningProviderError('API_INCOMPLETE', 'ARI did not finish this response. Retry to continue.');
+              throw new LearningProviderError('API_INCOMPLETE', 'Ari did not finish this response. Retry to continue.');
           }
           if (!response || response.status !== 'completed')
             throw new LearningProviderError('API_INCOMPLETE', 'The response was interrupted. Retry to continue.');
@@ -182,17 +199,17 @@ export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
           // Save completed response items before any tool can change app state.
           await checkpoint();
           if (!response.output.some(output => output.type === 'function_call'))
-            return { output: context.slice(start), text: texts.join('\n\n'), inputTokens, context };
+            return { output: context.slice(start), text: request.outputSchema ? structuredResponseText(response.output) : texts.join('\n\n'), inputTokens, context };
           await finishPendingCalls();
         }
-        throw new LearningProviderError('TOOL_LIMIT', 'ARI reached the tool limit for this turn. Retry to continue from the saved work.');
+        throw new LearningProviderError('TOOL_LIMIT', 'Ari reached the tool limit for this turn. Retry to continue from the saved work.');
       } catch (error) { throw learningProviderError(error); }
     },
     async compact(input, instructions) {
       try {
         const result = await client.responses.compact({ model, input: input as ResponseInputItem[], instructions });
         if (!result.output.some(output => output.type === 'compaction'))
-          throw new LearningProviderError('COMPACTION_FAILED', 'ARI could not compact this conversation. Its full history is still saved.');
+          throw new LearningProviderError('COMPACTION_FAILED', 'Ari could not compact this conversation. Its full history is still saved.');
         // Standalone compact output is canonical: keep retained messages too.
         return result.output;
       } catch (error) { throw learningProviderError(error); }
@@ -200,12 +217,12 @@ export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
     async generate<T>(instructions: string, payload: unknown, schema: Record<string, unknown>): Promise<T> {
       try {
         const response = await client.responses.create({
-          model, reasoning: { effort: 'high' }, instructions, store: false,
+          model, reasoning: { effort }, instructions, store: false,
           input: [{ role: 'user', content: JSON.stringify(payload) }], max_output_tokens: 16_000,
           text: { format: { type: 'json_schema', name: 'ari_learning_content', strict: true, schema: providerSchema(schema) as Record<string, unknown> } },
         });
         if (response.status !== 'completed' || !response.output_text)
-          throw new LearningProviderError('API_INCOMPLETE', 'ARI could not finish preparing this content. Retry to continue.');
+          throw new LearningProviderError('API_INCOMPLETE', 'Ari could not finish preparing this content. Retry to continue.');
         return JSON.parse(response.output_text) as T;
       } catch (error) { throw learningProviderError(error); }
     },

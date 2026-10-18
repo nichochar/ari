@@ -165,3 +165,55 @@ test('long tool output compacts at a paired boundary and returns canonical conte
     assert.equal(result.text, 'Used the compacted context.');
   } finally { if (previous === undefined) delete process.env.LEARNING_COMPACTION_TOKENS; else process.env.LEARNING_COMPACTION_TOKENS = previous; }
 });
+
+test('structured tutor refreshes personalization after a tool, keeps chosen model and images, and returns final JSON only', async () => {
+  const requests: any[] = [];
+  let current = 'USER.md: prefers brief explanations', refreshes = 0;
+  const final = '{"feedback":"Draw one diagram."}';
+  const schema = { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', properties: {
+    feedback: { type: 'string', maxLength: 2000 }, source: { type: 'string', format: 'uri' },
+  }, required: ['feedback'], additionalProperties: false };
+  const workspaceTool = { ...tool, name: 'workspace_write' };
+  const client = { responses: { create: async (request: any) => {
+    requests.push(structuredClone(request));
+    if (requests.length === 1) return events(completed([message('I will save that preference.'),
+      { type: 'function_call', call_id: 'save-preference', name: 'workspace_write', arguments: '{"path":"USER.md"}' },
+    ]));
+    return events(completed([message('The saved preference is current.'), message(final, [{ type: 'url_citation', url: 'https://example.com/diagram', title: 'Diagram', start_index: 0, end_index: 2 }])]));
+  } } } as unknown as OpenAI;
+  const provider = createLearningProvider('fixture', client, { model: 'gpt-6.1-sol', reasoningEffort: 'medium' })!;
+  const result = await provider.run({ instructions: 'Stale preferences',
+    refreshInstructions: async () => { refreshes++; return current; }, ephemeral: true, outputSchema: schema,
+    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Use a diagram.' }, { type: 'input_image', image_url: 'data:image/png;base64,AA==', detail: 'high' }] }],
+    tools: [workspaceTool], executeTool: async (name, args) => {
+      assert.equal(name, 'workspace_write'); assert.deepEqual(args, { path: 'USER.md' });
+      current = 'USER.md: prefers diagrams'; return { revision: 2 };
+    } });
+  assert.equal(refreshes, 2);
+  assert.equal(requests[0].instructions, 'USER.md: prefers brief explanations');
+  assert.equal(requests[1].instructions, 'USER.md: prefers diagrams');
+  for (const request of requests) {
+    assert.equal(request.model, 'gpt-6.1-sol'); assert.deepEqual(request.reasoning, { effort: 'medium' });
+    assert.equal(request.store, false); assert.equal(request.text.format.type, 'json_schema');
+    assert.equal(request.text.format.schema.$schema, undefined); assert.equal(request.text.format.schema.properties.source.format, undefined);
+    assert.equal(request.text.format.schema.properties.feedback.maxLength, 2000);
+    assert.equal(request.input[0].content[1].image_url, 'data:image/png;base64,AA==');
+  }
+  assert.equal(result.text, final, 'commentary and citation prose must not corrupt structured JSON');
+  assert.deepEqual(JSON.parse(result.text), { feedback: 'Draw one diagram.' });
+  assert.ok(result.context!.some(value => (value as any).type === 'function_call_output'));
+  assert.ok(JSON.stringify(result.context).includes('I will save that preference.'), 'canonical context retains commentary');
+});
+
+test('structured checkpoint recovery returns the final JSON without earlier commentary or a duplicate request', async () => {
+  const final = '{"feedback":"Use the next step."}';
+  let requests = 0;
+  const client = { responses: { create: async () => { requests++; throw new Error('A completed structured checkpoint must not call the model'); } } } as unknown as OpenAI;
+  const result = await createLearningProvider('fixture', client)!.run({ instructions: '', tools: [], outputSchema: {
+    type: 'object', properties: { feedback: { type: 'string' } }, required: ['feedback'], additionalProperties: false,
+  }, input: [{ role: 'user', content: 'Question' }, message('I will check the evidence.'), message(final)],
+  resumeText: 'I will check the evidence.\n\n' + final, executeTool: async () => null });
+  assert.equal(requests, 0);
+  assert.equal(result.text, final);
+  assert.deepEqual(JSON.parse(result.text), { feedback: 'Use the next step.' });
+});

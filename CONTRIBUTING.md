@@ -2,6 +2,8 @@
 
 Use Node.js 24+ and `npm ci`. `npm run dev` serves Vite on port 5173 and the API on port 3001. `npm test` uses isolated fixtures and needs no OpenAI credentials; `npm run build` typechecks and builds the app.
 
+Run `npm run setup:hooks` once per development checkout. This installs local commit and push checks for private file paths, SQLite data, and common credential formats. The push check scans the history being sent, including files deleted in later commits. `npm run privacy:check` runs the history check manually; CI runs it too. Review staged changes as well: automated checks cannot recognize every personal detail or secret format.
+
 - `src/`: React UI; shared shadcn/Base UI controls in `src/components/ui/`, Graphite/Teal tokens in `src/theme.css`.
 - `server/`: Express API, SQLite storage, Codex and optional Responses API adapters.
 - `shared/`: types and the bundled example curriculum. New curricula are created in the app and stored locally.

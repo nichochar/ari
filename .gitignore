@@ -22,3 +22,8 @@ chatgpt-auth.json
 /backups/
 /uploads/
 /screenshots/
+
+# Keep personal project plans and learner memory in .local/ instead.
+/PLAN.md
+/USER.md
+/MEMORY.md

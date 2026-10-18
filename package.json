@@ -15,7 +15,9 @@
     "stop": "node scripts/local-server.mjs stop",
     "status": "node scripts/local-server.mjs status",
     "backup": "node scripts/backup.mjs",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "setup:hooks": "node scripts/setup-hooks.mjs",
+    "privacy:check": "node scripts/check-public-files.mjs --history"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

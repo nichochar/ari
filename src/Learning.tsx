@@ -76,7 +76,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
   const latestUserId = data.messages.filter(message => message.role === 'user').at(-1)?.id;
   const linkedProposalIds = new Set(data.messages.flatMap(message => message.proposalIds || []));
   return <div className="main-chat-wrap">
-    <div className="main-chat-heading"><div><span className="eyebrow">YOUR ONGOING CONVERSATION</span><h2>Talk with ARI</h2></div>
+    <div className="main-chat-heading"><div><h2>Talk with ARI</h2></div>
       <div className="focus-select"><label htmlFor="conversation-focus">Conversation focus</label><Select id="conversation-focus" value={focusId} onValueChange={setFocusId} options={[{ value: '', label: 'Any subject' }, ...data.curricula.map(item => ({ value: item.id, label: item.title }))]} /></div>
     </div>
     <div className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>

@@ -764,7 +764,7 @@ export default function App() {
     <main className="main-area">
       <Button variant="plain" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileMenu(true)}><Menu size={22} /></Button>
       {view === 'desk' && exercise && <section className="page desk-page">
-        <div className="desk-heading"><div><span className="eyebrow">STUDY DESK</span><h1>{exercise.title}</h1></div>
+        <div className="desk-heading"><div><h1>{exercise.title}</h1></div>
           <span className={'tutor-status ' + (health?.aiConfigured ? 'ready' : '')}>{health?.aiConfigured ? 'Tutor ready' : 'Tutor unavailable'}</span>
         </div>
         <div className="desk-grid">
@@ -945,7 +945,7 @@ export default function App() {
       </section>}
       {view === 'chat' && <section className="page main-chat-page">{learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} /> : <div className="loading-screen" role={learning.error ? undefined : 'status'}>{learning.error ? <LampDesk size={30} /> : <LampLoader size={72} />}<h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>{learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}</div>}{learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}</section>}
       {view === 'path' && <section className="page">
-        <div className="page-heading"><span className="eyebrow">LEARNING PATH</span><h1>Learning path</h1>
+        <div className="page-heading"><h1>Learning path</h1>
           <p>Choose a lesson, or explore what you want to learn next.</p></div>
         <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-lamp"><LampDesk size={25} strokeWidth={1.5} /></span><span><strong>Talk with ARI</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
         {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { setChatFocusId(''); setChatStarter('I’d like to learn a new subject. '); setView('chat'); }}><Plus size={14} />Explore a new subject</Button></div>}
@@ -1004,7 +1004,7 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'journal' && <section className="page">
-        <div className="page-heading journal-heading"><div><span className="eyebrow">YOUR WORK</span><h1>Journal</h1>
+        <div className="page-heading journal-heading"><div><h1>Journal</h1>
           <p>Conversations, submitted photos, reflections, and the tutor’s daily review.</p></div>
           <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button></div>
         <div className="journal-grid">
@@ -1073,7 +1073,7 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'settings' && profileDraft && <section className="page">
-        <div className="page-heading"><span className="eyebrow">PREFERENCES</span><h1>Settings</h1><p>Set your pace and goal for future plans.</p></div>
+        <div className="page-heading"><h1>Settings</h1><p>Set your pace and goal for future plans.</p></div>
         <div className="settings-form"><label>Your name<Input value={profileDraft.name}
           onChange={event => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
           <label>Your goal<Textarea rows={3} value={profileDraft.goal}

@@ -1,4 +1,4 @@
-# ARI
+![ARI](public/ari-logo.svg)
 
 A personal AI tutor for any subject. Build a learning path, work through lessons and exercises, and ask questions as you go. Use pen and paper with a document camera, upload photos, or type your answers. ARI offers hints, grades your work, and remembers what you are learning.
 

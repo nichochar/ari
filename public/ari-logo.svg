@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="278" height="134" viewBox="0 0 278 134" role="img" aria-labelledby="title description">
+  <title id="title">ARI</title>
+  <desc id="description">A desk lamp casting a soft golden beam beside the ARI wordmark on graphite.</desc>
+  <!-- LampDesk from Lucide, ISC License.
+  Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as
+  part of Feather (MIT). All other copyright (c) for Lucide are held by
+  Lucide Contributors 2022.
+
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  -->
+  <!-- DM Sans Medium wordmark rendered as outlines for crisp, font-independent display. -->
+  <defs>
+    <linearGradient id="light" x1="18" y1="13" x2="24.3" y2="19.3" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e4b550" stop-opacity=".8"/>
+      <stop offset=".65" stop-color="#e4b550" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#e4b550" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="278" height="134" fill="#292f31"/>
+  <g transform="translate(30 31) scale(2.3)">
+    <path d="M14 17 22 9 31.8 11.8 16.8 26.8Z" fill="url(#light)" opacity=".85"/>
+    <g transform="translate(1 2)" fill="none" stroke="#f6f6f1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m14 5-3 3 2 7 8-8-7-2Z"/>
+      <path d="m14 5-3 3-3-3 3-3 3 3Z"/>
+      <path d="M9.5 6.5 4 12l3 6"/>
+      <path d="M3 22v-2c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2H3Z"/>
+    </g>
+  </g>
+  <g>
+    <path fill="#f6f6f1" d="M121.558 82 135.964 42.8H142.071L156.432 82H150.489L138.984 49.545L127.423 82ZM128.073 72.291 129.623 67.824H148.065L149.604 72.291Z"/>
+    <path fill="#c5c6c3" d="M173.248 82V42.8H186.533Q191.166 42.8 194.135 44.366Q197.103 45.931 198.539 48.549Q199.975 51.166 199.975 54.445Q199.975 57.581 198.532 60.239Q197.088 62.896 194.079 64.49Q191.07 66.084 186.35 66.084H178.848V82ZM193.845 82 185.396 64.565H191.577L200.357 82ZM178.848 61.821H186.155Q190.306 61.821 192.257 59.797Q194.207 57.773 194.207 54.563Q194.207 51.327 192.302 49.417Q190.397 47.507 186.11 47.507H178.848Z"/>
+    <path fill="#f6f6f1" d="M218.384 82V42.8H223.984V82Z"/>
+  </g>
+</svg>

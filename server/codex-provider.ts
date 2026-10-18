@@ -77,7 +77,7 @@ export function createCodexAsk(): AIAsk {
     active++;
     let directory: string | undefined;
     try {
-      directory = await mkdtemp(join(tmpdir(), 'genie-lamp-'));
+      directory = await mkdtemp(join(tmpdir(), 'ari-'));
       activeDirectories.set(directory, undefined);
       await writeFile(join(directory, `${task}-schema.json`), JSON.stringify(aiSchemas[task]), { mode: 0o600 });
       const imagePaths: string[] = [];

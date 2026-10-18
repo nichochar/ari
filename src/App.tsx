@@ -37,10 +37,10 @@ type OutgoingLessonMessage = {
 };
 const curated = exercises as Exercise[];
 const courseModules = modules as Module[];
-const selectedKey = 'genie:selectedExerciseId';
-const sidebarKey = 'genie:sidebarCollapsed';
-const viewKey = 'genie:view';
-const moduleKey = 'genie:selectedModuleId';
+const selectedKey = 'ari:selectedExerciseId';
+const sidebarKey = 'ari:sidebarCollapsed';
+const viewKey = 'ari:view';
+const moduleKey = 'ari:selectedModuleId';
 const labels: Record<View, string> = {
   desk: 'Study desk', path: 'Learning path', journal: 'Journal', settings: 'Settings', chat: 'Talk with ARI',
 };

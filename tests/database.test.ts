@@ -12,7 +12,7 @@ const tempDirs: string[] = [];
 after(() => { for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true }); });
 
 const fixture = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'genie-db-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'ari-db-test-'));
   tempDirs.push(dir);
   return { dbPath: join(dir, 'state.sqlite'), legacyPath: join(dir, 'state.json') };
 };

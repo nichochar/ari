@@ -11,7 +11,7 @@ import { StateStore } from '../server/state.js';
 import { normalizeGeneratedMath, type AIAsk } from '../server/ai.js';
 
 async function fixture(ai?: AIAsk) {
-  const dir = await mkdtemp(join(tmpdir(), 'genie-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ari-test-'));
   const path = join(dir, 'state.sqlite');
   const options = { dbPath: path, legacyStatePath: join(dir, 'legacy.json'), ai, aiConfigured: Boolean(ai), model: 'test' };
   let app = createApp(options);
@@ -187,12 +187,12 @@ test('image and origin validation, local plan fallback, and disabled AI', async 
     assert.ok(result.weeks[0].sessions[0].exerciseId);
     const exportResponse = await fx.request('/api/export');
     assert.equal(exportResponse.status, 200);
-    assert.match(exportResponse.headers.get('content-disposition') ?? '', /attachment/);
+    assert.equal(exportResponse.headers.get('content-disposition'), 'attachment; filename="ari-data.json"');
   } finally { await fx.close(); }
 });
 
 test('invalid legacy JSON stops migration and preserves original', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'genie-corrupt-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'ari-corrupt-test-'));
   try {
     const legacyPath = join(dir, 'state.json');
     await writeFile(legacyPath, '{"profile":{"name":"partial"}}');

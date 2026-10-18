@@ -217,8 +217,8 @@ function reviewEvidence(state: AppState, date: string, timeZone: string) {
 export function createApp(options: AppOptions = {}) {
   if ('statePath' in options) throw new Error('Use dbPath for SQLite state; statePath is no longer supported.');
   const app = express();
-  const store = new StateStore(options.dbPath ?? process.env.GENIE_DB_PATH ?? join(process.cwd(), '.local', 'genie.sqlite'),
-    { legacyPath: options.legacyStatePath ?? process.env.GENIE_LEGACY_PATH ?? join(process.cwd(), '.local', 'state.json') });
+  const store = new StateStore(options.dbPath ?? process.env.ARI_DB_PATH ?? join(process.cwd(), '.local', 'ari.sqlite'),
+    { legacyPath: options.legacyStatePath ?? process.env.ARI_LEGACY_PATH ?? join(process.cwd(), '.local', 'state.json') });
   app.locals.store = store;
   const learning = new LearningService(store, options.learningConfigured === false ? null : options.learningProvider);
   app.locals.learning = learning;
@@ -232,7 +232,7 @@ export function createApp(options: AppOptions = {}) {
   const ai = options.aiConfigured === false ? undefined : (options.ai ?? createAIAsk());
   const aiConfigured = options.aiConfigured ?? Boolean(ai);
   const model = options.model ?? process.env.OPENAI_MODEL ?? 'gpt-5.4';
-  const dist = options.distPath ?? process.env.GENIE_DIST_PATH ?? join(process.cwd(), 'dist');
+  const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
   const reviewQueue = new Map<string, Promise<DailyReview>>();
   const lessonQueue = new Map<string, { moduleId: string; message: string; language: 'en' | 'fr'; task: Promise<LessonSession> }>();
   const moduleLessonQueue = new Map<string, Promise<LessonSession>>();
@@ -514,7 +514,7 @@ export function createApp(options: AppOptions = {}) {
   });
   app.get('/api/export', async (_req, res) => {
     const state = await store.read();
-    res.setHeader('Content-Disposition', 'attachment; filename="genie-lamp-data.json"');
+    res.setHeader('Content-Disposition', 'attachment; filename="ari-data.json"');
     res.type('application/json').send(JSON.stringify(state, null, 2));
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));

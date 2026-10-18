@@ -20,7 +20,7 @@ function fixture() {
 }
 function run(f: ReturnType<typeof fixture>) {
   return spawnSync(process.execPath, [resolve('scripts/backup.mjs')], {
-    encoding: 'utf8', env: { ...process.env, GENIE_DB_PATH: f.path, GENIE_BACKUP_DIR: f.out }, timeout: 15_000,
+    encoding: 'utf8', env: { ...process.env, ARI_DB_PATH: f.path, ARI_BACKUP_DIR: f.out }, timeout: 15_000,
   });
 }
 function databaseValue(path: string, query: string) {
@@ -35,6 +35,7 @@ test('legacy backup retains snapshot bytes from WAL and publishes only a private
     assert.equal(result.status, 0, result.stderr);
     const files = readdirSync(f.out);
     assert.equal(files.length, 1);
+    assert.match(files[0], /^ari-.*\.sqlite$/);
     const path = join(f.out, files[0]);
     assert.deepEqual(Buffer.from(databaseValue(path, 'SELECT data FROM snapshots')!.data as Uint8Array), f.photo);
     assert.equal(statSync(path).mode & 0o777, 0o600);

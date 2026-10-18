@@ -46,7 +46,7 @@ export function createAIAsk(apiKey = process.env.OPENAI_API_KEY, client = apiKey
       const response = await client.responses.create({
         model: process.env.OPENAI_MODEL || 'gpt-5.4',
         instructions, input: [{ role: 'user', content }], store: false,
-        text: { format: { type: 'json_schema', name: `genie_${task}`, strict: true, schema: aiSchemas[task] } },
+        text: { format: { type: 'json_schema', name: `ari_${task}`, strict: true, schema: aiSchemas[task] } },
         max_output_tokens: task === 'tutor' ? 1800 : 2800,
       });
       if (response.status !== 'completed' || !response.output_text) throw new Error('AI_INCOMPLETE');

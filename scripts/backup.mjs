@@ -7,13 +7,13 @@ import { randomUUID } from 'node:crypto';
 
 // Native history is app-owned; CODEX_HOME is deliberately never inspected or copied.
 process.umask(0o077);
-const source = resolve(process.env.GENIE_DB_PATH || '.local/genie.sqlite');
+const source = resolve(process.env.ARI_DB_PATH || '.local/ari.sqlite');
 if (!existsSync(source)) throw new Error(`No database at ${source}; start the updated app first.`);
 const runtime = `${source}.codex`;
 const nativeState = join(runtime, 'state');
-const directory = resolve(process.env.GENIE_BACKUP_DIR || '.local/backups');
+const directory = resolve(process.env.ARI_BACKUP_DIR || '.local/backups');
 const createdAt = new Date().toISOString();
-const basename = `genie-${createdAt.replaceAll(':', '-')}-${randomUUID().slice(0, 8)}.sqlite`;
+const basename = `ari-${createdAt.replaceAll(':', '-')}-${randomUUID().slice(0, 8)}.sqlite`;
 const destination = join(directory, basename);
 let stage;
 let locked = false;

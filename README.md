@@ -8,6 +8,8 @@ My everyday setup: ARI, pen and paper, and an [IPEVO V4K USB document camera](ht
 
 ## Run locally
 
+Already using ARI? See [upgrading an existing installation](CONTRIBUTING.md#local-data) to keep your configuration and learning history.
+
 You need **Node.js 24+**, Git, and a **ChatGPT account with Codex access**. This is a single-user local app; macOS is tested. The built-in camera bridge is Mac-only, while browser cameras and photo uploads do not need it.
 
 ```sh

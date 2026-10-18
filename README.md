@@ -2,6 +2,10 @@
 
 A personal AI tutor for any subject. Build a learning path, work through lessons and exercises, and ask questions as you go. Use pen and paper with a document camera, upload photos, or type your answers. ARI offers hints, grades your work, and remembers what you are learning.
 
+![ARI running on a laptop beside a document camera and handwritten maths and physics work](docs/images/setup.jpg)
+
+My everyday setup: ARI, pen and paper, and an [IPEVO V4K USB document camera](https://www.amazon.com/dp/B079DLTG9F). It’s the camera I use and recommend for working on paper.
+
 ## Run locally
 
 You need **Node.js 24+**, Git, and a **ChatGPT account with Codex access**. This is a single-user local app; macOS is tested. The built-in camera bridge is Mac-only, while browser cameras and photo uploads do not need it.

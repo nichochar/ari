@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Check, FileText, LampDesk, Paperclip, Plus, RefreshCw, Send, X } from 'lucide-react';
 import type { LearningProposal, LearningView, MainChatRequest } from '../shared/learning';
 import { Markdown } from './Markdown';
+import { PageHeader } from './components/page-header';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
@@ -76,9 +77,9 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
   const latestUserId = data.messages.filter(message => message.role === 'user').at(-1)?.id;
   const linkedProposalIds = new Set(data.messages.flatMap(message => message.proposalIds || []));
   return <div className="main-chat-wrap">
-    <div className="main-chat-heading"><div><h2>Talk with ARI</h2></div>
+    <PageHeader title="Talk with ARI" actions={
       <div className="focus-select"><label htmlFor="conversation-focus">Conversation focus</label><Select id="conversation-focus" value={focusId} onValueChange={setFocusId} options={[{ value: '', label: 'Any subject' }, ...data.curricula.map(item => ({ value: item.id, label: item.title }))]} /></div>
-    </div>
+    } />
     <div className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>

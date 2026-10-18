@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight, BookOpen, Camera, Check, CheckCircle2, Download, Expand,
   History, Menu, Minimize, Pause, Plus, RefreshCw, RotateCw, Send, Settings2,
   LampDesk, Target, Upload, X,
 } from 'lucide-react';
 import { Markdown } from './Markdown';
+import { PageHeader } from './components/page-header';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
@@ -269,6 +270,7 @@ export default function App() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { localStorage.setItem(sidebarKey, String(sidebarCollapsed)); }, [sidebarCollapsed]);
   useEffect(() => { localStorage.setItem(viewKey, view); }, [view]);
+  useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view]);
   useEffect(() => { localStorage.setItem(moduleKey, selectedModuleId); }, [selectedModuleId]);
   useEffect(() => { localStorage.setItem('ari:curriculum', curriculumId); }, [curriculumId]);
   useEffect(() => { localStorage.setItem('ari:chatFocus', chatFocusId); }, [chatFocusId]);
@@ -764,9 +766,9 @@ export default function App() {
     <main className="main-area">
       <Button variant="plain" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileMenu(true)}><Menu size={22} /></Button>
       {view === 'desk' && exercise && <section className="page desk-page">
-        <div className="desk-heading"><div><h1>{exercise.title}</h1></div>
+        <PageHeader title={exercise.title} actions={
           <span className={'tutor-status ' + (health?.aiConfigured ? 'ready' : '')}>{health?.aiConfigured ? 'Tutor ready' : 'Tutor unavailable'}</span>
-        </div>
+        } />
         <div className="desk-grid">
           <div className="exercise-column">
             <article className="exercise-sheet">
@@ -943,10 +945,17 @@ export default function App() {
         </div>
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
-      {view === 'chat' && <section className="page main-chat-page">{learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} /> : <div className="loading-screen" role={learning.error ? undefined : 'status'}>{learning.error ? <LampDesk size={30} /> : <LampLoader size={72} />}<h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>{learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}</div>}{learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}</section>}
+      {view === 'chat' && <section className="page">
+        {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
+          : <><PageHeader title="Talk with ARI" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
+            {learning.error ? <LampDesk size={30} /> : <LampLoader size={72} />}
+            <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
+            {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
+          </div></>}
+        {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
+      </section>}
       {view === 'path' && <section className="page">
-        <div className="page-heading"><h1>Learning path</h1>
-          <p>Choose a lesson, or explore what you want to learn next.</p></div>
+        <PageHeader title="Learning path" description="Choose a lesson, or explore what you want to learn next." />
         <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-lamp"><LampDesk size={25} strokeWidth={1.5} /></span><span><strong>Talk with ARI</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
         {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { setChatFocusId(''); setChatStarter('I’d like to learn a new subject. '); setView('chat'); }}><Plus size={14} />Explore a new subject</Button></div>}
         <div className="tab-row"><Button variant="plain" className={pathTab === 'lessons' ? 'selected' : ''} onClick={() => setPathTab('lessons')}>All lessons</Button>
@@ -1004,9 +1013,9 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'journal' && <section className="page">
-        <div className="page-heading journal-heading"><div><h1>Journal</h1>
-          <p>Conversations, submitted photos, reflections, and the tutor’s daily review.</p></div>
-          <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button></div>
+        <PageHeader title="Journal" description="Conversations, submitted photos, reflections, and the tutor’s daily review." actions={
+          <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>
+        } />
         <div className="journal-grid">
           <div className="journal-card review-card"><div className="card-heading"><h2>Daily tutor review</h2>
             <Button variant="ghost" loading={reviewBusy} disabled={reviewBusy} onClick={() => void runDailyReview()}>
@@ -1073,7 +1082,7 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'settings' && profileDraft && <section className="page">
-        <div className="page-heading"><h1>Settings</h1><p>Set your pace and goal for future plans.</p></div>
+        <PageHeader title="Settings" description="Set your pace and goal for future plans." />
         <div className="settings-form"><label>Your name<Input value={profileDraft.name}
           onChange={event => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
           <label>Your goal<Textarea rows={3} value={profileDraft.goal}

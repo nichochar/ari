@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ArrowRight, BookOpen, Camera, Check, CheckCircle2, Download, Expand,
   History, Menu, Minimize, Pause, Plus, RefreshCw, RotateCw, Settings2,
-  LampDesk, Target, Upload, X,
+  Target, Upload, X,
 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PageHeader } from './components/page-header';
@@ -15,7 +15,7 @@ import { Select } from './components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from './components/ui/dialog';
 import { Slider } from './components/ui/slider';
 import { FileUpload } from './components/ui/file-upload';
-import { LampLoader } from './components/ui/lamp-loader';
+import { AriIcon, AriMark, AriSun, AriWordmark } from './components/ui/ari-mark';
 import { diagnosticIds, exercises, modules } from '../shared/curriculum';
 import type {
   AppState, DailyReview, Difficulty, Exercise, ExercisePage, Health, LessonChatRequest, LessonSession, Module, Profile,
@@ -83,7 +83,7 @@ function localDay() {
 }
 function navIcon(view: View) {
   if (view === 'desk') return <BookOpen size={19} />;
-  if (view === 'chat') return <LampDesk size={19} />;
+  if (view === 'chat') return <AriIcon size={19} />;
   if (view === 'path') return <Target size={19} />;
   if (view === 'journal') return <History size={19} />;
   return <Settings2 size={19} />;
@@ -162,7 +162,7 @@ function LessonConversation({ sessions, outgoing, draft, onDraft, onSend, onRetr
           : entry.outgoing?.status === 'sending' ? <ChatWaiting /> : entry.outgoing && <div className="message-error" role="alert"><p>{entry.outgoing.error}</p>
             <Button variant="ghost" onClick={() => onRetry(entry.outgoing!)}><RefreshCw size={14} /> Retry message</Button>
           </div>}
-      </div>) : <div className="conversation-empty"><LampDesk size={20} /><p>Ask about this lesson.</p></div>}
+      </div>) : <div className="conversation-empty"><AriIcon size={20} /><p>Ask about this lesson.</p></div>}
     </div>
     <ChatComposer value={draft} onChange={onDraft} onSend={onSend} sendDisabled={pending || !draft.trim()}
       label="Question about this lesson" placeholder="What would you like to understand?" maxLength={4000} />
@@ -744,13 +744,13 @@ export default function App() {
     <h1>Could not open your desk.</h1><p>{loadError}</p>
     <Button variant="primary" onClick={() => void load()}>Try again <ArrowRight size={16} /></Button>
   </div>;
-  if (!state) return <div className="loading-screen" role="status"><LampLoader size={80} /><h1>Preparing your desk…</h1></div>;
+  if (!state) return <div className="loading-screen" role="status"><AriSun size={80} /><h1>Preparing your desk…</h1></div>;
 
   const completedCount = Object.values(state.progress).filter(item => item.status === 'completed').length;
 
   return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenu ? 'sidebar-open' : '')}>
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><LampLoader size={42} /></span><strong>A<span className="brand-middle">r</span>i</strong></div>
+      <div className="brand"><AriWordmark className="brand-wordmark" height={34} /><AriMark className="brand-mark" size={42} label="Ari" /></div>
       <Button variant="plain" className="collapse-button" onClick={() => setSidebarCollapsed(value => !value)}
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><Menu size={19} /></Button>
@@ -809,7 +809,7 @@ export default function App() {
                       <RefreshCw size={14} /> {outgoing.status === 'saved' ? 'Refresh conversation' : 'Retry message'}
                     </Button>
                   </div>}
-                </div>) : <div className="conversation-empty"><LampDesk size={20} />
+                </div>) : <div className="conversation-empty"><AriIcon size={20} />
                   <p>Ask a question or share your paper.</p>
                 </div>}
               </div>
@@ -822,7 +822,7 @@ export default function App() {
                 </p>}
                 actions={<Button variant="secondary" disabled={!!sendMode || !!pageBusy || reflectionBusy} onClick={() => void send('check')}>
                   {preparingGrade ? 'Connecting camera…' : 'Grade my work'}</Button>}>
-                {preparingGrade && <p className="status-line loading-status" role="status"><LampLoader size={28} />Connecting to your camera and waiting for your paper…</p>}
+                {preparingGrade && <p className="status-line loading-status" role="status"><AriSun size={28} />Connecting to your camera and waiting for your paper…</p>}
                 {sendError && <p className="inline-error" role="alert">{sendError}</p>}
               </ChatComposer>
             </div>
@@ -847,7 +847,7 @@ export default function App() {
                         ? camera.nativeFrameUrl
                           ? <img ref={camera.nativeImageRef} src={camera.nativeFrameUrl} alt="Live IPEVO paper preview"
                             style={{ transform: 'translate(-50%, -50%) rotate(' + camera.rotation + 'deg) scaleX(' + (camera.mirrored ? -1 : 1) + ')' }} />
-                          : <span className="loading-status"><LampLoader size={32} />Connecting to IPEVO…</span>
+                          : <span className="loading-status"><AriSun size={32} />Connecting to IPEVO…</span>
                         : <video ref={camera.videoRef} autoPlay muted playsInline
                           style={{ transform: 'translate(-50%, -50%) rotate(' + camera.rotation + 'deg) scaleX(' + (camera.mirrored ? -1 : 1) + ')' }} />}
                     </div> : <div className="camera-placeholder"><Camera size={31} /><strong>Bring your notebook into view</strong>
@@ -927,7 +927,7 @@ export default function App() {
                 <Check size={16} /> {reflectionBusy ? 'Saving…' : progress?.status === 'completed' ? 'Save another reflection' : 'Mark complete and save'}
               </Button>
               {reflectionMessage && <p className="status-line" role="status">{reflectionMessage}</p>}
-              {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <LampLoader size={28} />}{reviewStatus}</p>}
+              {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <AriSun size={28} />}{reviewStatus}</p>}
             </div>
             <div className="next-actions">
               <span className="eyebrow">NEXT STEP</span>
@@ -937,7 +937,7 @@ export default function App() {
                 {!nextExercise && nextLesson && <Button variant="secondary" onClick={() => showLesson(nextLesson.id)}>Next lesson: {nextLesson.title} <ArrowRight size={16} /></Button>}
                 {currentModule && <Button variant="ghost" loading={generationBusy} disabled={generationBusy}
                   onClick={() => void generateExercise(currentModule.id, 'stretch')}>
-                  {generationBusy ? 'Generating…' : 'Try a harder exercise'} <LampDesk size={15} />
+                  {generationBusy ? 'Generating…' : 'Try a harder exercise'} <AriIcon size={15} />
                 </Button>}
               </div>
             </div>
@@ -948,7 +948,7 @@ export default function App() {
       {view === 'chat' && <section className="page">
         {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
           : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
-            {learning.error ? <LampDesk size={30} /> : <LampLoader size={72} />}
+            {learning.error ? <AriMark size={40} /> : <AriSun size={72} />}
             <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
             {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
           </div></>}
@@ -956,7 +956,7 @@ export default function App() {
       </section>}
       {view === 'path' && <section className="page">
         <PageHeader title="Learning path" description="Choose a lesson, or explore what you want to learn next." />
-        <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-lamp"><LampDesk size={25} strokeWidth={1.5} /></span><span><strong>Talk with Ari</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
+        <Button variant="plain" className="learning-chat-entry" onClick={() => { setChatFocusId(activeCurriculum?.id || ''); setView('chat'); }}><span className="learning-entry-mark"><AriIcon size={25} /></span><span><strong>Talk with Ari</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <i className="unread-dot" aria-label="Unread message" />}<ArrowRight size={18} /></Button>
         {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { setChatFocusId(''); setChatStarter('I’d like to learn a new subject. '); setView('chat'); }}><Plus size={14} />Explore a new subject</Button></div>}
         <div className="tab-row"><Button variant="plain" className={pathTab === 'lessons' ? 'selected' : ''} onClick={() => setPathTab('lessons')}>All lessons</Button>
           {(!activeCurriculum || activeCurriculum.source === 'original') && <Button variant="plain" className={pathTab === 'plan' ? 'selected' : ''} onClick={() => setPathTab('plan')}>Your plan</Button>}</div>
@@ -977,7 +977,7 @@ export default function App() {
           </Button>; })}</div>
           {selectedModule && <article className="module-detail"><span className="eyebrow">{activeCurriculum?.source === 'generated' ? `${activeCurriculum.topic} · ${selectedLesson?.status || 'planned'}` : `SHORT LESSON · PHASE ${selectedModule.phase}`}</span>
             <h2>{selectedModule.title}</h2><em>{selectedModule.frenchTitle}</em><p>{selectedModule.summary}</p>
-            {selectedLesson && selectedLesson.status !== 'ready' ? <div className="lesson-preparation">{prepareBusy || selectedLesson.status === 'preparing' ? <LampLoader size={48} /> : <LampDesk size={24} />}<h3>{selectedLesson.status === 'preparing' ? 'Ari is preparing this lesson' : selectedLesson.status === 'failed' ? 'This lesson needs another try' : 'Ready when you are'}</h3><p>{selectedLesson.status === 'preparing' ? 'Its explanation and exercises will appear here. You can leave this page while Ari works.' : 'Ari will prepare this lesson and tailored exercises from your learning path and recent work.'}</p>{selectedLesson.error && <p className="inline-error">{selectedLesson.error}</p>}<Button variant="primary" disabled={prepareBusy || selectedLesson.status === 'preparing'} onClick={() => void prepareLesson()}>{prepareBusy || selectedLesson.status === 'preparing' ? 'Preparing…' : selectedLesson.status === 'failed' ? 'Retry preparation' : 'Prepare lesson'}<ArrowRight size={15} /></Button></div> : <Markdown>{selectedModule.primer}</Markdown>}
+            {selectedLesson && selectedLesson.status !== 'ready' ? <div className="lesson-preparation">{prepareBusy || selectedLesson.status === 'preparing' ? <AriSun size={48} /> : <AriMark size={40} />}<h3>{selectedLesson.status === 'preparing' ? 'Ari is preparing this lesson' : selectedLesson.status === 'failed' ? 'This lesson needs another try' : 'Ready when you are'}</h3><p>{selectedLesson.status === 'preparing' ? 'Its explanation and exercises will appear here. You can leave this page while Ari works.' : 'Ari will prepare this lesson and tailored exercises from your learning path and recent work.'}</p>{selectedLesson.error && <p className="inline-error">{selectedLesson.error}</p>}<Button variant="primary" disabled={prepareBusy || selectedLesson.status === 'preparing'} onClick={() => void prepareLesson()}>{prepareBusy || selectedLesson.status === 'preparing' ? 'Preparing…' : selectedLesson.status === 'failed' ? 'Retry preparation' : 'Prepare lesson'}<ArrowRight size={15} /></Button></div> : <Markdown>{selectedModule.primer}</Markdown>}
             {(!selectedLesson || selectedLesson.status === 'ready') && <>
             <LessonConversation key={selectedModule.id} sessions={lessonSessions} outgoing={lessonOutgoing}
               draft={lessonDrafts[selectedModule.id] || ''}
@@ -1019,7 +1019,7 @@ export default function App() {
         <div className="journal-grid">
           <div className="journal-card review-card"><div className="card-heading"><h2>Daily tutor review</h2>
             <Button variant="ghost" loading={reviewBusy} disabled={reviewBusy} onClick={() => void runDailyReview()}>
-              {reviewBusy ? 'Reflecting…' : 'Reflect on today'} <LampDesk size={15} /></Button></div>
+              {reviewBusy ? 'Reflecting…' : 'Reflect on today'} <AriIcon size={15} /></Button></div>
             {latestReview ? <div><small>{formatDate(latestReview.createdAt)}</small><p>{latestReview.summary}</p>
               <h3>Strengths</h3><ul>{latestReview.strengths.map(item => <li key={item}>{item}</li>)}</ul>
               <h3>Gaps to revisit</h3><ul>{latestReview.gaps.map(item => <li key={item}>{item}</li>)}</ul>

@@ -39,12 +39,10 @@ p { line-height: 1.55; }
   z-index: 30;
   transition: width .2s;
 }
-.brand { display: flex; align-items: center; gap: 13px; padding: 0 8px; min-height: 43px; white-space: nowrap; overflow: hidden; }
-.brand strong { font-family: 'DM Sans', sans-serif; font-size: 1.8rem; font-weight: 500; letter-spacing: .025em; line-height: 1; }
-.brand-middle { color: var(--ari-sidebar-muted); }
-.brand-mark { width: 33px; height: 33px; display: grid; align-items: center; justify-items: start; flex: none; }
-.brand-mark > .ari-lamp-loader { max-width: none; }
-.brand-mark:not(:hover) .ari-lamp-light { animation: none; opacity: 0; }
+.sidebar { --ari-sun-shadow: var(--ari-sun-shadow-on-dark); }
+.brand { display: flex; align-items: center; padding: 0 8px; min-height: 43px; overflow: visible; }
+/* The SVG components carry their own display rules, so these need the extra .brand. */
+.brand .brand-mark { display: none; }
 .collapse-button {
   margin: 20px 8px 18px;
   border: 1px solid var(--ari-sidebar-border);
@@ -80,7 +78,9 @@ p { line-height: 1.55; }
 .completion-count strong { color: var(--ari-sidebar-text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .sidebar-collapsed .sidebar { width: 66px; }
 .sidebar-collapsed .brand { padding: 0 4px; }
-.sidebar-collapsed .brand strong, .sidebar-collapsed .nav-item span, .sidebar-collapsed .sidebar-foot { display: none; }
+.sidebar-collapsed .brand-wordmark { display: none; }
+.sidebar-collapsed .brand .brand-mark { display: block; }
+.sidebar-collapsed .nav-item span, .sidebar-collapsed .sidebar-foot { display: none; }
 .sidebar-collapsed .nav-item { justify-content: center; }
 .sidebar-collapsed .collapse-button { margin-left: 3px; }
 #root { isolation: isolate; }
@@ -355,7 +355,9 @@ p { line-height: 1.55; }
   .sidebar { position: fixed; transform: translateX(-100%); width: 220px; box-shadow: 10px 0 25px color-mix(in srgb, var(--ari-text) 20%, transparent); }
   .sidebar.sidebar-open { transform: translateX(0); }
   .sidebar-collapsed .sidebar { width: 220px; }
-  .sidebar-collapsed .brand strong, .sidebar-collapsed .nav-item span, .sidebar-collapsed .sidebar-foot { display: initial; }
+  .sidebar-collapsed .nav-item span, .sidebar-collapsed .sidebar-foot { display: initial; }
+  .sidebar-collapsed .brand-wordmark { display: inline-block; }
+  .sidebar-collapsed .brand .brand-mark { display: none; }
   .sidebar-collapsed .nav-item { justify-content: flex-start; }
   .mobile-menu { display: grid; place-items: center; margin: 12px 0 0 16px; width: 34px; height: 34px; border: 0; background: transparent; color: var(--ari-text); }
   .mobile-scrim { display: block; position: fixed; inset: 0; border: 0; background: var(--ari-overlay); z-index: 25; }
@@ -382,7 +384,7 @@ p { line-height: 1.55; }
 .sidebar-collapsed .nav-item .unread-dot { position: absolute; top: 6px; right: 6px; }
 .learning-chat-entry { display: flex; align-items: center; gap: 14px; width: 100%; margin: 0 0 24px; border: 1px solid var(--ari-border); border-radius: 5px; padding: 16px 20px; color: var(--ari-text); background: var(--ari-accent-soft); text-align: left; }
 .learning-chat-entry:hover { border-color: var(--ari-accent); background: var(--ari-accent-soft); }
-.learning-entry-lamp { width: 44px; height: 44px; background: var(--ari-accent-soft); color: var(--ari-accent); display: grid; place-items: center; border-radius: 50%; flex: none; }
+.learning-entry-mark { width: 44px; height: 44px; background: var(--ari-accent-soft); color: var(--ari-accent); display: grid; place-items: center; border-radius: 50%; flex: none; }
 .learning-chat-entry strong, .learning-chat-entry small { display: block; }
 .learning-chat-entry strong { font-family: 'Newsreader', Georgia, serif; font-size: 1.4rem; font-weight: 500; }
 .learning-chat-entry small { margin-top: 3px; font-size: .8rem; color: var(--ari-muted); }
@@ -479,6 +481,8 @@ p { line-height: 1.55; }
 .onboarding-recap .personalization-card h2 { font-size: 1.25rem; }
 .lesson-preparation { padding: 26px; background: var(--ari-subtle); margin: 20px 0; text-align: center; }
 .lesson-preparation > svg { color: var(--ari-accent); }
+/* Ari's own glyph stays graphite with its sun, whatever accent the container uses. */
+.conversation-empty .ari-icon, .main-chat-empty > .ari-sun, .lesson-preparation > .ari-sun, .learning-entry-mark .ari-icon, .active-tool .ari-sun { color: var(--ari-text); }
 .lesson-preparation h3 { margin: 12px 0 7px; }
 .lesson-preparation p { font-size: .84rem; color: var(--ari-muted); }
 .subject-mark { background: var(--ari-success); }

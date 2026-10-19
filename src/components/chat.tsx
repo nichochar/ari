@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { LampDesk, MoreHorizontal, Send } from 'lucide-react';
+import { MoreHorizontal, Send } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
-import { LampLoader } from './ui/lamp-loader';
+import { AriDot, AriSun } from './ui/ari-mark';
 
 function messageDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -24,7 +24,7 @@ export function ChatMessage({ author, createdAt, children, details, arriving = f
     }}>
     <div className={`chat-bubble ${author === 'user' ? 'user-bubble' : 'assistant-bubble'}`}>{children}</div>
     <div className="message-meta">
-      <span className="message-author">{author === 'assistant' && <LampDesk size={12} aria-hidden="true" />}{name}</span>
+      <span className="message-author">{author === 'assistant' && <AriDot />}{name}</span>
       {createdAt && <><span aria-hidden="true">·</span><time dateTime={createdAt}>{messageDate(createdAt)}</time></>}
       {details && <Button variant="plain" className="message-details-button" aria-label={`Details for ${name}'s message`}
         aria-haspopup="dialog" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(true)}><MoreHorizontal size={15} /></Button>}
@@ -38,7 +38,7 @@ export function ChatMessage({ author, createdAt, children, details, arriving = f
 }
 
 export function ChatWaiting({ label = 'Ari is thinking' }: { label?: string }) {
-  return <div className="tutor-waiting" role="status"><LampLoader /><span>{label}</span></div>;
+  return <div className="tutor-waiting" role="status"><AriSun /><span>{label}</span></div>;
 }
 
 /** Shared compact, growing composer; context-specific actions remain explicit slots. */

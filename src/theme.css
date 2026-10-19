@@ -14,7 +14,9 @@
   --ari-action-hover: #333e40;
   --ari-on-accent: #ffffff;
   --ari-focus: var(--ari-accent);
-  --ari-lamp-light: #e4b550;
+  --ari-sun: #c8622a;
+  --ari-sun-shadow: var(--ari-secondary);
+  --ari-sun-shadow-on-dark: #8796a0;
   --ari-secondary: #596a74;
   --ari-sidebar: #292f31;
   --ari-sidebar-active: #484f51;

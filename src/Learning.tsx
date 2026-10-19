@@ -1,6 +1,6 @@
 import { appStorage } from './storage';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, BookOpen, Check, FileText, LampDesk, Paperclip, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, FileText, Paperclip, Plus, RefreshCw, X } from 'lucide-react';
 import type { LearningProposal, LearningView, MainChatRequest } from '../shared/learning';
 import { Markdown } from './Markdown';
 import { PageHeader } from './components/page-header';
@@ -11,7 +11,7 @@ import { Textarea } from './components/ui/textarea';
 import { Select } from './components/ui/select';
 import { Checkbox } from './components/ui/checkbox';
 import { FileUpload } from './components/ui/file-upload';
-import { LampLoader } from './components/ui/lamp-loader';
+import { AriMark, AriSun } from './components/ui/ari-mark';
 import { learningApi, learningError, type PendingMainMessage } from './useLearning';
 import { OnboardingConversation } from './Personalization';
 
@@ -22,7 +22,7 @@ function ToolActivity({ data, runId, running }: { data: LearningView; runId?: st
   const finished = new Set((data.events || []).filter(event => event.runId === runId && event.type === 'tool_result').map(event => event.callId));
   const active = steps.find(event => !finished.has(event.callId));
   const activity: Record<string, string> = { workspace_write: 'Saving learning notes', workspace_edit: 'Updating learning notes', workspace_move: 'Organizing learning notes', workspace_delete: 'Removing an outdated note', complete_onboarding: 'Saving your tutor setup' };
-  return <div className="tool-activity">{running && active && <span className="active-tool" role="status"><LampLoader size={24} />{activity[active.name || ''] || 'Consulting ' + (labels[active.name || '']?.toLowerCase() || 'your question')}…</span>}<details><summary>Ari’s steps · {steps.length}</summary><ul>{steps.slice(-8).map(event => <li key={event.id}>{finished.has(event.callId) ? <Check size={11} /> : <span className="tool-pending-dot" />}{labels[event.name || ''] || 'Working on your question'}</li>)}</ul></details></div>;
+  return <div className="tool-activity">{running && active && <span className="active-tool" role="status"><AriSun size={24} />{activity[active.name || ''] || 'Consulting ' + (labels[active.name || '']?.toLowerCase() || 'your question')}…</span>}<details><summary>Ari’s steps · {steps.length}</summary><ul>{steps.slice(-8).map(event => <li key={event.id}>{finished.has(event.callId) ? <Check size={11} /> : <span className="tool-pending-dot" />}{labels[event.name || ''] || 'Working on your question'}</li>)}</ul></details></div>;
 }
 
 export function ProposalCard({ proposal, refresh, discuss, openCurriculum }: {
@@ -94,7 +94,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
     <div className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
-        {!data.messages.length && !pending.length && <div className="main-chat-empty"><LampDesk size={28} strokeWidth={1.4} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="secondary" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
+        {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="secondary" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
         {data.messages.filter(message => !message.proactive || message.deliveredAt).map(message => <div className={'main-message ' + (message.role === 'user' ? 'outgoing-exchange' : '')} key={message.id}>
           {message.content ? <ChatMessage author={message.role} createdAt={message.createdAt}
             details={(!!message.materialIds?.length || (message.role === 'assistant' && data.events.some(event => event.runId === message.runId && event.type === 'tool_call'))) ? <>

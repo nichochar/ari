@@ -4,7 +4,7 @@ Personal tutor for any subject. Read README.md and CONTRIBUTING.md for setup and
 
 Use mature, encouraging language. Adapt to the learner’s goals and starting level. Keep hints useful without doing the work for them. Curriculum creation and major changes need a deliberate learner action. Preserve full transcripts, editable learner memory, historical revisions and native compaction. Do not silently change model or billing provider.
 
-Use shared shadcn/Base UI controls in src/components/ui and semantic tokens in src/theme.css. Camera preview stays local; only deliberate requests submit snapshots. Submitted work is saved in the local journal. No timed check-ins.
+Use shared shadcn/Base UI controls in src/components/ui and semantic tokens in src/theme.css. The logo, loader, Ari icon and brand colours follow design/README.md; change them through design/build-logo.py, not by editing its generated files. Camera preview stays local; only deliberate requests submit snapshots. Submitted work is saved in the local journal. No timed check-ins.
 
 Use the shared `PageHeader` in `src/components/page-header.tsx` inside the common `.page` container for every main view. Keep title typography, spacing and action alignment in that shared layout.
 

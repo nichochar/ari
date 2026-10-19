@@ -59,7 +59,8 @@
 .ui-button-ghost:hover:not(:disabled), .ui-button-icon:hover:not(:disabled) { background: var(--ari-subtle); color: var(--ari-text); }
 .ui-button:disabled { cursor: default; opacity: .55; }
 .ui-button[aria-busy="true"] { opacity: 1; cursor: wait; }
-.ui-button[aria-busy="true"] > svg:not(.ari-lamp-loader) { display: none; }
+.ui-button[aria-busy="true"] > svg:not(.ari-sun) { display: none; }
+.ui-button-primary { --ari-sun-shadow: currentColor; }
 .ui-button > svg { flex-shrink: 0; }
 .ui-button:focus-visible, .ui-select-trigger:focus-visible, .ui-input:focus-visible {
   outline: 2px solid var(--ari-focus);

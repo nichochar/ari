@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
-import { LampLoader } from './lamp-loader';
+import { AriSun } from './ari-mark';
 
 // Adapted from shadcn/ui's Base UI button, with Ari's sizes and semantic classes.
 // https://ui.shadcn.com/r/styles/base-nova/button.json
@@ -25,7 +25,7 @@ export type ButtonProps = React.ComponentPropsWithRef<'button'> & VariantProps<t
 function Button({ className, variant = 'primary', size = 'default', type = 'button', loading = false, disabled, children, ...props }: ButtonProps) {
   return <ButtonPrimitive data-slot="button" data-variant={variant} data-size={size} type={type}
     className={cn(buttonVariants({ variant, size }), className)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
-    {loading && <LampLoader size={24} />}{children}
+    {loading && <AriSun size={24} />}{children}
   </ButtonPrimitive>;
 }
 

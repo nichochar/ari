@@ -63,15 +63,15 @@ function displayMath(source: string, position: number, math: string) {
   // Continue the current list/quote rather than ending it when inserting a block.
   const prefix = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?/.exec(line)![0]
     .replace(/[^\s>]/g, ' ');
-  const body = math.trim().split('\n').map(line => {
-    const content = prefix && line.startsWith(prefix) ? line.slice(prefix.length) : line;
-    return prefix + content;
-  }).join('\n');
+  const body = math.split('\n').map(line => prefix && line.startsWith(prefix) ? line.slice(prefix.length) : line)
+    .join('\n').trim().split('\n').map(line => prefix + line).join('\n');
   return `\n${prefix}\n${prefix}$$\n${body}\n${prefix}$$\n${prefix}\n${prefix}`;
 }
 
 /** Adapt standard LaTeX delimiters at render time; never rewrite saved messages.
- * Code and existing dollar math are opaque, including their backslashes.
+ * Code and math contents stay opaque, including their backslashes. Multiline
+ * dollar math needs standalone fences so Markdown cannot mistake its first
+ * equation line for fence metadata or consume later prose as equation content.
  */
 export function normalizeMathDelimiters(source: string): string {
   let result = '';
@@ -102,6 +102,17 @@ export function normalizeMathDelimiters(source: string): string {
       let end = position + 1;
       while (source[end] === marker) end++;
       const closing = closingRun(source, end, marker, end - position);
+      if (marker === '$' && end - position === 2 && closing !== -1) {
+        const math = source.slice(end, closing - 2);
+        const line = source.slice(source.lastIndexOf('\n', position - 1) + 1, position);
+        const standalone = /^[\t >]*$/.test(line) && /^[\t ]*\r?\n/.test(math)
+          && /\r?\n[\t >]*$/.test(math) && /^[\t ]*(?:\r?\n|$)/.test(source.slice(closing));
+        if (math.includes('\n') && !standalone) {
+          result += displayMath(source, position, math);
+          position = closing;
+          continue;
+        }
+      }
       // Unmatched punctuation is ordinary Markdown, not a protected span.
       if (closing !== -1) end = closing;
       result += source.slice(position, end);

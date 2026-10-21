@@ -84,6 +84,46 @@ $\text{literal \( and \[}$`;
   assert.equal(mathCount(render('$x^2$ and $$y^2$$\n\n$$\ny^2\n$$')), 3);
 });
 
+test('multiline dollar equations keep their first line and do not consume following prose or equations', () => {
+  const source = String.raw`### A quadratic model
+$$f(x)=3x^2
+\quad\Rightarrow\quad f'(x)=6x
+\quad\Rightarrow\quad f''(x)=6.$$
+The derivative is a rate of change.
+$$f(2)=12.$$
+**Check the units** before continuing.`;
+  const html = render(source);
+  assert.equal(mathCount(html), 2);
+  assert.match(html, /<annotation encoding="application\/x-tex">f\(x\)=3x\^2\n/);
+  assert.match(html, /<p>The derivative is a rate of change\./);
+  assert.match(html, /<strong>Check the units<\/strong> before continuing\./);
+  const normalized = normalizeMathDelimiters(source);
+  assert.equal(normalizeMathDelimiters(normalized), normalized);
+});
+
+test('multiline dollar equations preserve lists, quotations, row separators and Windows line endings', () => {
+  const source = String.raw`- Differentiate: $$f(x)=3x^2
+  \quad f'(x)=6x.$$ Then check.
+- Another step.
+
+> $$\begin{aligned}a&=b\\[4pt]
+> c&=d\end{aligned}
+> $$ After the equation.`.replace(/\n/g, '\r\n');
+  const html = render(source);
+  assert.equal(mathCount(html), 2);
+  assert.equal((html.match(/<li>/g) ?? []).length, 2);
+  assert.match(html, /<li>[\s\S]*Then check\.<\/p>\s*<\/li>/);
+  assert.match(html, /<blockquote>[\s\S]*After the equation\.<\/p>\s*<\/blockquote>/);
+  assert.ok(html.includes(String.raw`a&amp;=b\\[4pt]`));
+});
+
+test('multiline dollar examples inside code and escaped dollar signs remain literal', () => {
+  const source = ['```latex', '$$f(x)=3x^2', String.raw`\quad f'(x)=6x.$$`, '```',
+    '`$$first\nsecond$$`', String.raw`Pay \$5 and \$10.`, '$x^2$',
+    '$$unfinished'].join('\n\n');
+  assert.equal(normalizeMathDelimiters(source), source);
+});
+
 test('same-line display math keeps surrounding list items and blockquotes intact', () => {
   const html = render(String.raw`- Start with \[x^2=4\] and solve.
 - Check the roots.

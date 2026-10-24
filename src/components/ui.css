@@ -67,6 +67,41 @@
   outline-offset: 2px;
 }
 
+.ui-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ari-border);
+  border-radius: var(--ari-radius);
+  background: var(--ari-subtle);
+  color: var(--ari-text);
+  font-size: .78rem;
+  line-height: 1.55;
+}
+.ui-alert-destructive {
+  --ari-focus: var(--ari-danger);
+  background: var(--ari-danger-soft);
+  color: var(--ari-danger);
+  border-color: color-mix(in srgb, var(--ari-danger) 20%, transparent);
+}
+.ui-alert-description { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ui-alert-description > :last-child { margin-bottom: 0; }
+.ui-alert-dismiss {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px -2px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+.ui-alert-dismiss:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+
 .ui-input, .ui-textarea {
   width: 100%;
   min-width: 0;

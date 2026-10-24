@@ -9,6 +9,7 @@ import { Markdown } from './Markdown';
 import { PageHeader } from './components/page-header';
 import { ChatComposer, ChatMessage, ChatWaiting } from './components/chat';
 import { Button } from './components/ui/button';
+import { Alert } from './components/ui/alert';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
 import { Select } from './components/ui/select';
@@ -874,7 +875,8 @@ export default function App() {
                   </div>
                 </div>}
               </div>
-              {camera.error && camera.error !== sendError && <p className="inline-error" role="alert">{camera.error}</p>}
+              {camera.error && camera.error !== sendError && <Alert variant="destructive" className="camera-error"
+                onDismiss={camera.dismissError} dismissLabel="Dismiss camera error">{camera.error}</Alert>}
               <div className="upload-row">
                 <FileUpload label="Upload photo" accept="image/jpeg,image/png,image/webp" onFile={onUpload}>
                   <Upload size={15} /> Upload photo

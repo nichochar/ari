@@ -524,25 +524,45 @@ test('review failure does not erase completed work or reflection', async () => {
   } finally { await fx.close(); }
 });
 
-test('chat grading respects model-recognized intent and relevant legible work', async () => {
+test('Send never grades even when the model recognizes assessment intent and returns a full rubric', async () => {
   const rubric = exercises[0].rubric;
-  const ai: AIAsk = async (_task, _instructions, payload) => ({ kind: 'feedback', observation: 'This is a printed prompt without learner steps.', feedback: 'Looks correct.',
-    nextStep: 'Proceed.', question: '', score: 100, readable: true, confidence: 'high',
-    criteria: rubric.map(item => ({ criterion: item.criterion, awarded: item.points, max: item.points, comment: 'yes' })),
-    workRelevant: false, workLegible: true,
-    assessmentRequested: /vérifie/i.test((payload as { learnerMessage: string }).learnerMessage) });
+  const ai: AIAsk = async (_task, instructions) => {
+    assert.match(instructions, /This request continues a conversation/);
+    assert.doesNotMatch(instructions, /The learner selected Grade my work/);
+    return { kind: 'feedback', observation: 'The learner wrote a relevant slope calculation.', feedback: 'Divide the change in output by the change in time.',
+      nextStep: 'Check the units.', question: '', score: 100, readable: true, confidence: 'high',
+      criteria: rubric.map(item => ({ criterion: item.criterion, awarded: item.points, max: item.points, comment: 'Visible calculation' })),
+      workRelevant: true, workLegible: true, assessmentRequested: true };
+  };
   const fx = await fixture(ai);
   try {
     const exerciseId = exercises[0].id;
-    const casual = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'What should I try?', image: png })).json();
-    assert.equal(casual.score, null);
-    assert.deepEqual(casual.criteria, []);
-    const requested = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Vérifie mon calcul, s’il te plaît.', image: png })).json();
-    assert.equal(requested.kind, 'clarify');
-    assert.equal(requested.score, null);
+    for (const message of ['What should I try?', 'Is this correct?', 'Vérifie mon calcul, s’il te plaît.', 'Please grade this.']) {
+      const result = await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message, image: png });
+      assert.equal(result.status, 200);
+      const response = await result.json();
+      assert.equal(response.kind, 'explanation');
+      assert.equal(response.score, null);
+      assert.deepEqual(response.criteria, []);
+      assert.equal(response.feedback, 'Divide the change in output by the change in time.');
+    }
     const state = await (await fx.request('/api/state')).json();
     assert.equal(state.progress[exerciseId].lastScore, null);
-    assert.equal(state.sessions[0].snapshotId, state.sessions[1].snapshotId);
+    assert.equal(state.sessions.length, 4);
+    assert.ok(state.sessions.every((session: { response: { score: unknown }; snapshotId: string }) =>
+      session.response.score === null && session.snapshotId === state.sessions[0].snapshotId));
+  } finally { await fx.close(); }
+});
+
+test('a chat question with an irrelevant or unreadable photo still receives an explanation, not a grading failure', async () => {
+  const fx = await fixture(async () => ({ ...tutorReply, kind: 'feedback', feedback: 'Slope is change in output divided by change in time.',
+    assessmentRequested: true, workRelevant: false, workLegible: false, readable: false }));
+  try {
+    const response = await (await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'chat', message: 'Why do I divide by time?', image: png })).json();
+    assert.equal(response.kind, 'explanation');
+    assert.equal(response.feedback, 'Slope is change in output divided by change in time.');
+    assert.equal(response.score, null);
+    assert.deepEqual(response.criteria, []);
   } finally { await fx.close(); }
 });
 
@@ -568,28 +588,50 @@ test('review rejects an empty local day and includes legacy progress in later ev
   } finally { await fx.close(); }
 });
 
-test('natural assessment request can grade and its observed rubric survives into later chat', async () => {
+test('Grade then Send preserves assessment context and score across reloads without regrading', async () => {
   const rubric = exercises[0].rubric;
   let laterHistory: { role: string; content: string }[] = [];
-  const ai: AIAsk = async (_task, _instructions, payload) => {
-    const p = payload as { learnerMessage: string; history: { role: string; content: string }[] };
-    if (p.learnerMessage === 'What should I try next?') { laterHistory = p.history; return tutorReply; }
-    return { kind: 'feedback', observation: 'The learner wrote a relevant slope calculation.', feedback: 'The first step is sound.',
+  const ai: AIAsk = async (_task, instructions, payload) => {
+    const p = payload as { mode: string; learnerMessage: string; history: { role: string; content: string }[] };
+    if (p.mode === 'chat') {
+      laterHistory = p.history;
+      assert.match(instructions, /This request continues a conversation/);
+      assert.doesNotMatch(instructions, /grade ONLY the visible or typed steps/);
+    } else {
+      assert.match(instructions, /The learner selected Grade my work/);
+      assert.doesNotMatch(instructions, /This request continues a conversation/);
+    }
+    // Deliberately simulate an overeager model grading a follow-up. The server must reject that grade.
+    return { kind: 'feedback', observation: 'The learner wrote a relevant slope calculation.', feedback: p.mode === 'check' ? 'The first step is sound.' : 'The units follow from dividing voltage by time.',
       nextStep: 'Check units.', question: '', score: 100, readable: true, confidence: 'medium',
-      criteria: rubric.map((item, index) => ({ criterion: item.criterion, awarded: index ? 0 : item.points,
+      criteria: rubric.map((item, index) => ({ criterion: item.criterion, awarded: p.mode === 'chat' || !index ? item.points : 0,
         max: item.points, comment: index ? 'Not shown' : 'Visible calculation' })),
       workRelevant: true, workLegible: true, assessmentRequested: true };
   };
   const fx = await fixture(ai);
   try {
     const exerciseId = exercises[0].id;
-    const graded = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Is this correct? I calculated the slope.' })).json();
+    const graded = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', message: 'I calculated the slope.', image: png })).json();
     assert.equal(graded.kind, 'feedback');
-    assert.ok(graded.score > 0);
-    await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'What should I try next?' });
+    assert.ok(graded.score > 0 && graded.score < 100);
+    const followup = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Why are the units wrong? Is this correct now?', image: photo(2) })).json();
+    assert.equal(followup.kind, 'explanation');
+    assert.equal(followup.score, null);
+    assert.deepEqual(followup.criteria, []);
+    assert.equal(followup.feedback, 'The units follow from dividing voltage by time.');
     assert.match(laterHistory[1].content, /Observation: The learner wrote/);
     assert.match(laterHistory[1].content, /Score: \d+%/);
     assert.match(laterHistory[1].content, /Visible calculation/);
+    await fx.restart();
+    const state = await (await fx.request('/api/state')).json();
+    assert.equal(state.progress[exerciseId].lastScore, graded.score);
+    assert.equal(state.sessions.length, 2);
+    assert.equal(state.sessions[0].response.score, graded.score);
+    assert.equal(state.sessions[1].response.score, null);
+    assert.ok(state.sessions.every((session: { exerciseId: string; snapshotId: string }) => session.exerciseId === exerciseId && session.snapshotId));
+    assert.notEqual(state.sessions[0].snapshotId, state.sessions[1].snapshotId);
+    const regraded = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', image: png })).json();
+    assert.equal(regraded.score, graded.score);
   } finally { await fx.close(); }
 });
 

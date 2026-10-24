@@ -24,6 +24,7 @@ export function useCamera() {
   const [active, setActive] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
+  const dismissError = useCallback(() => setError(''), []);
   const [initialPreferences] = useState(readCameraPreferences);
   const [rotation, setRotation] = useState(initialPreferences.rotation);
   const [mirrored, setMirrored] = useState(initialPreferences.mirrored);
@@ -282,5 +283,5 @@ export function useCamera() {
   }, [stop]);
   useEffect(() => () => stop(), [stop]);
 
-  return { videoRef, nativeImageRef, nativeFrameUrl, devices, deviceId, deviceLabel, mode, active, starting, error, rotation, mirrored, start, startNative, stop, capture, captureWhenReady, setRotation, setMirrored };
+  return { videoRef, nativeImageRef, nativeFrameUrl, devices, deviceId, deviceLabel, mode, active, starting, error, dismissError, rotation, mirrored, start, startNative, stop, capture, captureWhenReady, setRotation, setMirrored };
 }

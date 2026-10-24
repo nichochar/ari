@@ -138,6 +138,7 @@ p { line-height: 1.55; }
 .panel-heading h2 { margin: 4px 0 0; }
 .panel-heading > span { color: var(--ari-muted); font-size: .75rem; }
 .camera-stage { position: relative; margin: 0 16px; background: var(--ari-subtle); }
+.camera-error { margin: 12px 16px 0; }
 .camera-image-area {
   height: clamp(340px, 31vw, 520px);
   min-width: 0;

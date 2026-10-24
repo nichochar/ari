@@ -120,10 +120,11 @@ function normalizeTutor(value: unknown, mode: TutorRequest['mode'], exercise: Ex
   const rawSchema = tutorResponseSchema.extend({ workRelevant: z.boolean(), workLegible: z.boolean(), assessmentRequested: z.boolean().optional() });
   const parsed = rawSchema.safeParse(value);
   if (!parsed.success) throw new HttpError(502, 'The tutor returned an invalid response. Try again.');
-  const { workRelevant, workLegible, assessmentRequested, ...response } = parsed.data;
+  const { workRelevant, workLegible, assessmentRequested: _assessment, ...response } = parsed.data;
   if (mode === 'hint') return { ...response, kind: 'hint', score: null, criteria: [] };
   if (mode === 'explain' || mode === 'question') return { ...response, kind: 'explanation', score: null, criteria: [] };
-  if (mode === 'chat' && (!assessmentRequested || response.kind !== 'feedback'))
+  // Only the explicit Grade my work action may produce a score, regardless of model intent.
+  if (mode !== 'check')
     return { ...response, kind: response.kind === 'feedback' ? 'explanation' : response.kind, score: null, criteria: [] };
   const rubric = exercise.rubric;
   const matched = response.criteria.length === rubric.length && rubric.every(r => {
@@ -402,7 +403,7 @@ export function createApp(options: AppOptions = {}) {
     const payload = { exercise, mode: input.mode, hintLevel: input.hintLevel ?? Math.min(3, (state.progress[exercise.id]?.hintCount ?? 0) + 1),
       language: input.language ?? state.profile.language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
       imageOrder: submitted.imageOrder };
-    const raw = await safeAI(ai, 'tutor', tutorInstructions, payload,
+    const raw = await safeAI(ai, 'tutor', tutorInstructions(input.mode), payload,
       submitted.images.length > 1 ? submitted.images : submitted.images[0]);
     const response = normalizeTutor(raw, input.mode, exercise, Boolean(submitted.images.length || input.message?.trim()), payload.language);
     await store.update(draft => {

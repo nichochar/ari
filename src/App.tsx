@@ -12,6 +12,7 @@ import { Button } from './components/ui/button';
 import { Alert } from './components/ui/alert';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip';
 import { Select } from './components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from './components/ui/dialog';
 import { Slider } from './components/ui/slider';
@@ -935,8 +936,18 @@ export default function App() {
               <span className="eyebrow">NEXT STEP</span>
               <p>{progress?.status === 'completed' ? 'Ready for another challenge?' : 'Work through this on paper. Send a question or ask for a grade when ready.'}</p>
               <div>
-                {nextExercise && <Button variant="secondary" onClick={() => selectExercise(nextExercise.id)}>Next exercise: {nextExercise.title} <ArrowRight size={16} /></Button>}
-                {!nextExercise && nextLesson && <Button variant="secondary" onClick={() => showLesson(nextLesson.id)}>Next lesson: {nextLesson.title} <ArrowRight size={16} /></Button>}
+                {nextExercise && <Tooltip>
+                  <TooltipTrigger render={<Button variant="secondary" className="next-learning-action" onClick={() => selectExercise(nextExercise.id)} />}>
+                    <span>Next exercise: {nextExercise.title}</span><ArrowRight size={16} />
+                  </TooltipTrigger>
+                  <TooltipContent>{nextExercise.title}</TooltipContent>
+                </Tooltip>}
+                {!nextExercise && nextLesson && <Tooltip>
+                  <TooltipTrigger render={<Button variant="secondary" className="next-learning-action" onClick={() => showLesson(nextLesson.id)} />}>
+                    <span>Next lesson: {nextLesson.title}</span><ArrowRight size={16} />
+                  </TooltipTrigger>
+                  <TooltipContent>{nextLesson.title}</TooltipContent>
+                </Tooltip>}
                 {currentModule && <Button variant="ghost" loading={generationBusy} disabled={generationBusy}
                   onClick={() => void generateExercise(currentModule.id, 'stretch')}>
                   {generationBusy ? 'Generating…' : 'Try a harder exercise'} <AriIcon size={15} />

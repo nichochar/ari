@@ -67,6 +67,21 @@
   outline-offset: 2px;
 }
 
+.ui-tooltip-positioner { z-index: 100; }
+.ui-tooltip-content {
+  width: max-content;
+  max-width: min(360px, var(--available-width), calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid var(--ari-border);
+  border-radius: var(--ari-radius);
+  background: var(--ari-surface);
+  color: var(--ari-text);
+  box-shadow: var(--ari-shadow);
+  font-size: .76rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .ui-alert {
   display: flex;
   align-items: flex-start;

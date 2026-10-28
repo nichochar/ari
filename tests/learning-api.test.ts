@@ -306,3 +306,46 @@ test('repair cannot bypass source checks or publish an unsupported reference', a
     assert.match(lesson.error!, /Resource 1 is unsupported/); assert.equal(data.exercises.filter(e => e.generated).length, 0);
   } finally { await fx.close(); }
 });
+
+test('extensions continue phase numbering and deferred lessons retain their own accepted brief and materials', async () => {
+  let materialId = '', description = 'Teach derivations and numbered questions over two sessions.';
+  const preparations: any[] = [], verifications: any[] = [];
+  const base = fixtureLearningProvider();
+  const fx = await fixture({ ...base,
+    run: request => toolReply(request, 'propose_learning', { ...historyProposal, kind: 'expand', expansion: 'followup',
+      targetCurriculumId: 'original-prepa', description, materialIds: [materialId] }),
+    generate: async <T>(instructions: string, payload: unknown, schema: Record<string, unknown>) => {
+      if (instructions.startsWith('Prepare')) preparations.push(payload);
+      if (instructions.startsWith('Independently')) verifications.push(payload);
+      return base.generate<T>(instructions, payload, schema);
+    },
+  });
+  try {
+    materialId = (await (await fx.request('/api/learning/materials', 'POST', { title: 'Accepted teaching notes', kind: 'note', text: 'Explain the evidence behind each claim.' })).json()).id;
+    await chat(fx, 'Extend this curriculum.'); await fx.settle();
+    const first = (await fx.store().readLearning()).proposals[0];
+    assert.equal((await fx.request(`/api/learning/proposals/${first.id}/accept`, 'POST', { revision: first.revision })).status, 202);
+    await fx.settle();
+    let data = await fx.store().readLearning();
+    const firstLessons = data.lessons.filter(lesson => lesson.sourceProposalId === first.id);
+    assert.deepEqual(firstLessons.map(lesson => lesson.phase), [7, 8]);
+    assert.deepEqual(firstLessons.map(lesson => lesson.status), ['ready', 'planned']);
+    assert.equal(preparations[0].proposal.description, description);
+
+    description = 'A different extension brief, which must not leak into the previous one.';
+    materialId = (await (await fx.request('/api/learning/materials', 'POST', { title: 'Later notes', kind: 'note', text: 'A different teaching context.' })).json()).id;
+    await chat(fx, 'Extend it again.'); await fx.settle();
+    const second = (await fx.store().readLearning()).proposals.at(-1)!;
+    await fx.request(`/api/learning/proposals/${second.id}/accept`, 'POST', { revision: second.revision }); await fx.settle();
+    data = await fx.store().readLearning();
+    assert.deepEqual(data.lessons.filter(lesson => lesson.sourceProposalId === second.id).map(lesson => lesson.phase), [9, 10]);
+
+    await fx.restart();
+    await fx.request(`/api/learning/lessons/${firstLessons[1].id}/prepare`, 'POST', {}); await fx.settle();
+    assert.equal(preparations.at(-1).proposal.id, first.id);
+    assert.equal(preparations.at(-1).proposal.description, first.description);
+    assert.deepEqual(preparations.at(-1).materials.map((m: { title: string }) => m.title), ['Accepted teaching notes']);
+    assert.equal(verifications.at(-1).proposal.id, first.id);
+    assert.equal((await fx.store().readLearning()).lessons.find(lesson => lesson.id === firstLessons[1].id)?.status, 'ready');
+  } finally { await fx.close(); }
+});

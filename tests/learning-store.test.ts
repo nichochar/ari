@@ -230,3 +230,54 @@ test('generic curricula retain supplied PDF originals and reject references acro
   assert.equal((await reopened.readLearning()).lessons.find(lesson => lesson.id === 'ethical-arguments')!.subject, 'philosophy');
   reopened.close();
 });
+
+test('legacy extensions recover their accepted outline and phases without regenerating lessons or changing learner work', async () => {
+  const path = fixture();
+  const store = new StateStore(path);
+  const seed = await store.readLearning();
+  const curriculum = seed.curricula[0];
+  const outline = Array.from({ length: 8 }, (_, i) => ({ title: `Extension lesson ${i + 1}`, summary: `Accepted topic ${i + 1}`, objectives: ['Explain the idea.'] }));
+  await store.updateLearning(data => {
+    data.proposals.push({ id: 'accepted-extension', title: 'Broaden the foundations', description: 'Full derivations over two sessions.',
+      topic: 'Mathematics', level: 'Returning learner', goal: 'Explore new fundamentals', kind: 'expand', expansion: 'followup',
+      targetCurriculumId: curriculum.id, curriculumId: curriculum.id, lessons: outline, status: 'accepted', revision: 1, createdAt: now });
+    for (const [index, item] of outline.entries()) {
+      const id = `extension-${index}`;
+      data.lessons.push({ ...item, id, curriculumId: curriculum.id, subject: 'Mathematics', frenchTitle: '', phase: 13 + index,
+        primer: index === 0 ? 'A personalized lesson already studied.' : '', prerequisites: [index ? `extension-${index - 1}` : curriculum.lessonIds.at(-1)!],
+        exerciseIds: [], resources: [], status: index === 0 ? 'ready' : 'planned', revision: 1 });
+      data.curricula[0].lessonIds.push(id);
+    }
+    data.runs.push({ id: 'accepted-run', requestId: 'accept:accepted-extension:1', kind: 'prepare', status: 'complete',
+      lessonId: 'extension-0', proposalId: 'accepted-extension', createdAt: now, updatedAt: now });
+  });
+  let photo = '';
+  await store.update(state => {
+    photo = store.saveSnapshot(image);
+    state.sessions.push({ id: 'before-repair', exerciseId: exercises[0].id, createdAt: now, mode: 'chat', requestText: 'Saved reasoning', response, snapshotId: photo });
+  });
+  const before = await store.readLearning(), work = await store.read();
+  store.close();
+  const reopened = new StateStore(path);
+  const repaired = await reopened.readLearning();
+  assert.deepEqual(repaired.lessons.slice(12).map(lesson => lesson.phase), [7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.ok(repaired.lessons.slice(12).every(lesson => lesson.sourceProposalId === 'accepted-extension'));
+  assert.deepEqual(repaired.lessons.slice(0, 12), before.lessons.slice(0, 12));
+  for (const lesson of repaired.lessons.slice(12)) {
+    const old = before.lessons.find(item => item.id === lesson.id)!;
+    assert.deepEqual(lesson, { ...old, phase: old.phase - 6, sourceProposalId: 'accepted-extension', revision: old.revision + 1 });
+  }
+  assert.deepEqual(repaired.exercises, before.exercises);
+  assert.deepEqual(repaired.runs, before.runs);
+  assert.deepEqual(repaired.proposals, before.proposals);
+  assert.deepEqual(await reopened.read(), work);
+  assert.deepEqual(reopened.getSnapshot(photo), { data: png, mimeType: 'image/png' });
+  const revisions = await reopened.readLessonRevisions('extension-0');
+  assert.equal(revisions[0].lesson.phase, 13);
+  assert.equal(revisions.at(-1)!.lesson.phase, 7);
+  reopened.close();
+  const again = new StateStore(path);
+  assert.deepEqual(await again.readLearning(), repaired);
+  assert.deepEqual(await again.readLessonRevisions('extension-0'), revisions);
+  again.close();
+});

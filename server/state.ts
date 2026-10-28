@@ -9,6 +9,7 @@ import { exercises, modules } from '../shared/curriculum.js';
 import { stateSchema, validateImage } from './schema.js';
 import { learningDataSchema } from './learning-schema.js';
 import { originalPrimerHashes } from './original-primer-hashes.js';
+import { repairLessonOrigins } from './learning-repairs.js';
 
 const SCHEMA_VERSION = 4;
 export const ORIGINAL_CURRICULUM_ID = 'original-prepa';
@@ -176,7 +177,7 @@ export class StateStore {
     } else {
       const previous = this.loadLearning();
       const draft = structuredClone(previous);
-      let changed = false;
+      let changed = repairLessonOrigins(draft);
       for (const lesson of draft.lessons) {
         const bundled = modules.find(module => module.id === lesson.id);
         if (lesson.curriculumId !== ORIGINAL_CURRICULUM_ID || lesson.status !== 'ready' || !bundled || lesson.primer === bundled.primer) continue;
@@ -186,7 +187,7 @@ export class StateStore {
         changed = true;
       }
       if (changed) {
-        // Retain the previous lesson and its exercises before publishing richer text.
+        // Retain prior content and metadata before applying compatible repairs.
         this.writeLearning(previous);
         this.advanceRevisions(previous, draft);
         this.writeLearning(learningDataSchema.parse(draft) as LearningData);

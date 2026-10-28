@@ -9,6 +9,8 @@ export interface Curriculum {
 export interface LearningLesson extends Module {
   curriculumId: string; status: 'planned' | 'preparing' | 'ready' | 'failed';
   revision: number; error?: string;
+  /** Accepted outline that created this lesson, retained for deferred preparation. */
+  sourceProposalId?: string;
 }
 export interface OutlineLesson { title: string; summary: string; objectives: string[]; }
 export interface LearningProposal {

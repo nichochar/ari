@@ -17,6 +17,7 @@ export const learningLessonSchema = z.object({
   exerciseIds: ids, resources: z.array(z.object({ title: text(300), url: text(4000).url() }).strict()).max(100),
   curriculumId: id, status: z.enum(['planned', 'preparing', 'ready', 'failed']), revision: z.number().int().min(1),
   error: text(4000).optional(),
+  sourceProposalId: id.optional(),
 }).strict();
 export const learningProposalSchema = z.object({
   id, title: text(200).min(1), description: text(10000), topic: text(300).min(1), level: text(1000), goal: text(4000),
@@ -90,6 +91,7 @@ export const learningDataSchema = z.object({
   const curricula = new Map(data.curricula.map(curriculum => [curriculum.id, curriculum]));
   const lessons = new Map(data.lessons.map(lesson => [lesson.id, lesson]));
   const exercises = new Map(data.exercises.map(exercise => [exercise.id, exercise]));
+  const proposals = new Map(data.proposals.map(proposal => [proposal.id, proposal]));
   data.curricula.forEach((curriculum, index) => {
     if (curriculum.learnerId !== data.learnerId) ctx.addIssue({ code: 'custom', path: ['curricula', index, 'learnerId'], message: 'Curriculum belongs to a different learner.' });
     if (new Set(curriculum.lessonIds).size !== curriculum.lessonIds.length || curriculum.lessonIds.some(id => lessons.get(id)?.curriculumId !== curriculum.id)) {
@@ -97,6 +99,10 @@ export const learningDataSchema = z.object({
     }
   });
   data.lessons.forEach((lesson, index) => {
+    const source = lesson.sourceProposalId ? proposals.get(lesson.sourceProposalId) : undefined;
+    if (lesson.sourceProposalId && (!source || source.status !== 'accepted' || source.curriculumId !== lesson.curriculumId)) {
+      ctx.addIssue({ code: 'custom', path: ['lessons', index, 'sourceProposalId'], message: 'Lesson source must be an accepted proposal in its curriculum.' });
+    }
     if (!curricula.get(lesson.curriculumId)?.lessonIds.includes(lesson.id)) {
       ctx.addIssue({ code: 'custom', path: ['lessons', index, 'curriculumId'], message: 'Lesson must belong to an existing curriculum outline.' });
     }

@@ -32,3 +32,5 @@ chatgpt-auth.json
 .ari/
 .ari-workspace.json
 *.workspace/
+
+audit/

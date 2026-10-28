@@ -106,6 +106,9 @@ function photoSource(id: string) {
 function photoIds(record: { snapshotId?: string; snapshotIds?: string[] }) {
   return record.snapshotIds?.length ? record.snapshotIds : record.snapshotId ? [record.snapshotId] : [];
 }
+function workPhotoLabel(count: number) {
+  return count === 1 ? 'Photo of my work' : 'Photos of my work';
+}
 function PhotoSet({ ids, label, onOpen }: {
   ids: string[]; label: string; onOpen: (id: string, opener: HTMLButtonElement) => void;
 }) {
@@ -795,13 +798,13 @@ export default function App() {
                 onScroll={event => { const node = event.currentTarget; shouldFollowConversation.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
                 {conversation.length ? conversation.map(({ id, createdAt, session, outgoing }) => session ? <div className="exchange" key={id}>
                   <ChatMessage author="user" createdAt={session.createdAt}>
-                    <p>{session.requestText || (photoIds(session).length ? 'Photo of my work' : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
+                    <p>{session.requestText || (photoIds(session).length ? workPhotoLabel(photoIds(session).length) : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
                     <PhotoSet ids={photoIds(session)} label="Submitted work" onOpen={openPhoto} />
                   </ChatMessage>
                   <TutorBubble response={session.response} createdAt={session.createdAt} />
                 </div> : outgoing && <div className="exchange outgoing-exchange" key={id}>
                   <ChatMessage author="user" createdAt={createdAt} arriving>
-                    <p>{outgoing.request.message || (outgoing.pageSnapshotIds.length || outgoing.request.image ? 'Photo of my work' : 'Grade my work')}</p>
+                    <p>{outgoing.request.message || (outgoing.pageSnapshotIds.length || outgoing.request.image ? workPhotoLabel(outgoing.pageSnapshotIds.length + Number(Boolean(outgoing.request.image))) : 'Grade my work')}</p>
                     <PhotoSet ids={[...outgoing.pageSnapshotIds, ...(outgoing.request.image ? [outgoing.request.image] : [])]}
                       label="Submitted work" onOpen={openPhoto} />
                   </ChatMessage>
@@ -1034,9 +1037,7 @@ export default function App() {
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'journal' && <section className="page">
-        <PageHeader title="Journal" description="Conversations, submitted photos, reflections, and the tutor’s daily review." actions={
-          <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>
-        } />
+        <PageHeader title="Journal" description="Conversations, submitted photos, reflections, and the tutor’s daily review." />
         <div className="journal-grid">
           <div className="journal-card review-card"><div className="card-heading"><h2>Daily tutor review</h2>
             <Button variant="ghost" loading={reviewBusy} disabled={reviewBusy} onClick={() => void runDailyReview()}>
@@ -1081,7 +1082,7 @@ export default function App() {
                 <Button variant="plain" className="entry-title" onClick={() => selectExercise(session.exerciseId)}>{linked?.title || session.exerciseId} <ArrowRight size={15} /></Button>
                 <div className="exchange journal-conversation">
                   <ChatMessage author="user" createdAt={session.createdAt}>
-                    <p>{session.requestText || (photoIds(session).length ? 'Photo of my work' : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
+                    <p>{session.requestText || (photoIds(session).length ? workPhotoLabel(photoIds(session).length) : session.mode === 'check' ? 'Grade my work' : 'Question')}</p>
                     <PhotoSet ids={photoIds(session)} label="Submitted work" onOpen={openPhoto} />
                   </ChatMessage>
                   <TutorBubble response={session.response} createdAt={session.createdAt} />
@@ -1102,7 +1103,6 @@ export default function App() {
             })}
           </div>}
         </div>
-        <p className="export-note">JSON export contains snapshot IDs and conversation records. Open photos here in the journal.</p>
         {actionError && <p className="page-error" role="alert">{actionError}</p>}
       </section>}
       {view === 'settings' && profileDraft && <section className="page">
@@ -1120,6 +1120,11 @@ export default function App() {
           {profileMessage && <p className="status-line" role="status">{profileMessage}</p>}
         </div>
         {learning.data && <PersonalizationSettings data={learning.data.personalization} refresh={learning.refresh} discuss={text => { setChatStarter(text); setChatFocusId(''); setView('chat'); }} />}
+        <div className="settings-export">
+          <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>
+          <p className="export-note">JSON export contains snapshot IDs and conversation records. Open photos in the journal.</p>
+          {actionError && <p className="page-error" role="alert">{actionError}</p>}
+        </div>
       </section>}
     </main>
     <Dialog open={!!photoOpen} onOpenChange={open => { if (!open) setPhotoOpen(null); }}>

@@ -330,8 +330,10 @@ p { line-height: 1.55; }
 .entry-title:hover { text-decoration: underline; }
 .sessions-card { grid-column: span 2; }
 .export-note { font-size: .73rem; color: var(--ari-muted); margin-top: 16px; }
+.settings-export { margin-top: 24px; }
 .settings-form { width: min(650px, 100%); padding: 26px 30px; }
-.settings-form input, .settings-form textarea, .settings-form .ui-select-trigger { display: block; margin-top: 7px; }
+.settings-form input, .settings-form textarea { display: block; }
+.settings-form input, .settings-form textarea, .settings-form .ui-select-trigger { margin-top: 7px; }
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mobile-menu, .mobile-scrim { display: none; }
 .ui-dialog-content.photo-overlay {

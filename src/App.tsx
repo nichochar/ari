@@ -1,7 +1,7 @@
 import { appStorage } from './storage';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, BookOpen, Camera, Check, CheckCircle2, Download, Expand,
+  ArrowRight, BookOpen, Camera, Check, CheckCircle2, ClipboardCheck, Download, Expand,
   History, Menu, Minimize, Pause, Plus, RefreshCw, RotateCw, Settings2,
   Target, Upload, X,
 } from 'lucide-react';
@@ -28,8 +28,9 @@ import { useCamera } from './useCamera';
 import { useLearning, learningApi, learningError } from './useLearning';
 import { MainConversation } from './Learning';
 import { PersonalizationSettings } from './Personalization';
+import { Assessments } from './Assessments';
 
-type View = 'desk' | 'path' | 'journal' | 'settings' | 'chat';
+type View = 'desk' | 'path' | 'journal' | 'settings' | 'chat' | 'assessments';
 type TutorMode = 'chat' | 'check';
 type OutgoingMessage = {
   id: string; createdAt: string; request: TutorRequest;
@@ -48,7 +49,7 @@ const sidebarKey = 'ari:sidebarCollapsed';
 const viewKey = 'ari:view';
 const moduleKey = 'ari:selectedModuleId';
 const labels: Record<View, string> = {
-  desk: 'Study desk', path: 'Learning path', journal: 'Journal', settings: 'Settings', chat: 'Talk with Ari',
+  desk: 'Study desk', path: 'Learning path', journal: 'Journal', settings: 'Settings', chat: 'Talk with Ari', assessments: 'Assessments',
 };
 
 async function api<T>(path: string, options?: RequestInit, timeout = 180000): Promise<T> {
@@ -88,6 +89,7 @@ function navIcon(view: View) {
   if (view === 'chat') return <AriIcon size={19} />;
   if (view === 'path') return <Target size={19} />;
   if (view === 'journal') return <History size={19} />;
+  if (view === 'assessments') return <ClipboardCheck size={19} />;
   return <Settings2 size={19} />;
 }
 function Snapshot({ id, label, onOpen }: {
@@ -188,7 +190,7 @@ export default function App() {
     const saved = appStorage.getItem(moduleKey);
     return saved || courseModules[0]?.id || '';
   });
-  const learning = useLearning(view === 'chat', view !== 'desk');
+  const learning = useLearning(view === 'chat', view !== 'desk' && view !== 'assessments');
   const onboardingNavigationChecked = useRef(false);
   useEffect(() => {
     if (!learning.data || onboardingNavigationChecked.current) return;
@@ -285,7 +287,7 @@ export default function App() {
   const boundaryRef = useRef({ view, selectedId });
   useEffect(() => {
     const previous = boundaryRef.current;
-    if ((previous.view === 'desk' && (view !== 'desk' || previous.selectedId !== selectedId)) || (previous.view !== view && view === 'chat')) learningIdle.current();
+    if ((previous.view === 'desk' && (view !== 'desk' || previous.selectedId !== selectedId)) || (previous.view === 'assessments' && view !== 'assessments') || (previous.view !== view && view === 'chat')) learningIdle.current();
     boundaryRef.current = { view, selectedId };
   }, [view, selectedId]);
   useEffect(() => {
@@ -757,7 +759,7 @@ export default function App() {
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><Menu size={19} /></Button>
       <nav className="main-nav" aria-label="Main navigation">
-        {(['desk', 'chat', 'path', 'journal', 'settings'] as View[]).map(item =>
+        {(['desk', 'chat', 'path', 'assessments', 'journal', 'settings'] as View[]).map(item =>
           <Button variant="plain" key={item} title={labels[item]} aria-label={labels[item]}
             className={'nav-item ' + (view === item ? 'active' : '')}
             onClick={() => { onboardingNavigationChecked.current = true; if (item !== 'desk') gradeCaptureRef.current?.abort(); setView(item); setMobileMenu(false); setActionError(''); }}>
@@ -966,6 +968,12 @@ export default function App() {
             {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
           </div></>}
         {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
+      </section>}
+      {view === 'assessments' && <section className="page">
+        {learning.data ? <Assessments curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={activeCurriculum?.id} />
+          : <><PageHeader title="Assessments" /><div className="loading-screen page-loading" role={learning.error ? 'alert' : 'status'}>
+            {learning.error ? <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
+          </div></>}
       </section>}
       {view === 'path' && <section className="page">
         <PageHeader title="Learning path" description="Choose a lesson, or explore what you want to learn next." />

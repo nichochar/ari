@@ -49,6 +49,7 @@ Models are configurable in `.env`; your account must have access to the selected
 1. Open **Talk with Ari** and describe what you want to learn. For example: “Teach me photography from scratch, in 20-minute sessions.”
 2. Discuss the proposed outline, then choose **Create lesson** or **Create curriculum**.
 3. Use the **Study desk** to practice. Chat through anything as needed, and grade when ready. Save a reflection to help Ari adapt.
+4. Open **Assessments** for a fresh mixed paper. Adjust Ari’s proposed topics, work at your pace, and submit for a score and learning diagnosis. Hints are allowed; each submission and its photos stay saved.
 
 New learners start with a brief conversation.
 

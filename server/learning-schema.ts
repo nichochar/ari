@@ -45,7 +45,7 @@ export const materialSchema = z.object({
 export const learningRunSchema = z.object({
   id, requestId: id, status: z.enum(['queued', 'running', 'complete', 'failed']),
   kind: z.enum(['chat', 'prepare', 'review']), createdAt: timestamp, updatedAt: timestamp,
-  messageId: id.optional(), assistantMessageId: id.optional(), lessonId: id.optional(), proposalId: id.optional(), error: text(4000).optional(),
+  messageId: id.optional(), assistantMessageId: id.optional(), lessonId: id.optional(), proposalId: id.optional(), assessmentId: id.optional(), submissionId: id.optional(), error: text(4000).optional(),
   context: z.array(z.unknown()).max(100000).optional(), contextTokens: z.number().int().min(0).optional(), completedText: text(100000).optional(),
   baseContextHash: text(128).optional(),
 }).strict();

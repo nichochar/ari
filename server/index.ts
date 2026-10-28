@@ -32,6 +32,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {
   if (stopping) return;
   stopping = true;
   app.locals.learning.stop();
+  app.locals.assessments.stop();
   cameraBridge.stop();
   const deadline = setTimeout(() => process.exit(0), 5000);
   deadline.unref();

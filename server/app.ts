@@ -12,6 +12,8 @@ import { StateStore } from './state.js';
 import { cameraBridge } from './camera.js';
 import { LearningService } from './learning-service.js';
 import { learningRoutes } from './learning-routes.js';
+import { AssessmentService } from './assessment-service.js';
+import { assessmentRoutes } from './assessment-routes.js';
 import { LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
 import { PersonalizationError, PersonalizationWorkspace } from './personalization.js';
 import { createPersonalizedAsk } from './personalization-ai.js';
@@ -236,6 +238,10 @@ export function createApp(options: AppOptions = {}) {
   app.locals.workspace = workspace;
   const learning = new LearningService(store, options.learningConfigured === false ? null : options.learningProvider, workspace);
   app.locals.learning = learning;
+  const assessments = new AssessmentService(store, learning);
+  app.locals.assessments = assessments;
+  assessments.onReviewed = (assessmentId, submissionId) => learning.reviewAssessment(assessmentId, submissionId);
+  void assessments.recover().catch(() => undefined);
   if (options.learningConfigured !== false) void learning.recover().catch(() => undefined);
   const catalogState = async (): Promise<AppState> => {
     const state = await store.read(), data = await store.readLearning();
@@ -270,6 +276,7 @@ export function createApp(options: AppOptions = {}) {
   });
   app.use('/api', express.json({ limit: '7mb', type: 'application/json' }));
   app.use('/api/learning', learningRoutes(learning));
+  app.use('/api/assessments', assessmentRoutes(assessments));
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', aiConfigured, model, storage: 'sqlite',
     mainTutor: { configured: Boolean(learning.provider), model: learning.provider?.model ?? null } }));
   app.get('/api/camera/status', async (_req, res) => res.json(await cameraBridge.status()));

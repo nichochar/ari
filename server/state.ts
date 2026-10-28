@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { AssessmentData } from '../shared/assessments.js';
+import { assessmentDataSchema } from './assessment-schema.js';
 import type { AppState, Exercise } from '../shared/types.js';
 import type { LearnerMemory, LearningData, LearningLesson } from '../shared/learning.js';
 import type { PersonalizationMetadata, PersonalizationRevision } from '../shared/personalization.js';
@@ -155,6 +157,7 @@ export class StateStore {
   private initializeLearning(): void {
     // Additive migration: no legacy entity or snapshot is rewritten.
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS assessment_state (learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS learning_state (learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS learning_lesson_revisions (
         learner_id TEXT NOT NULL, lesson_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
@@ -232,6 +235,31 @@ export class StateStore {
     }
     if (draft.memory.revision < previous.memory.revision) throw new Error('Memory revision cannot move backwards.');
     if (draft.memory.content !== previous.memory.content) draft.memory.revision = Math.max(draft.memory.revision, previous.memory.revision + 1);
+  }
+
+  private loadAssessments(): AssessmentData {
+    const row = this.db.prepare('SELECT payload FROM assessment_state WHERE learner_id = ?').get(this.learnerId) as JsonRow | undefined;
+    return assessmentDataSchema.parse(row ? JSON.parse(row.payload) : { assessments: [] });
+  }
+
+  async readAssessments(): Promise<AssessmentData> {
+    return this.transaction(() => this.loadAssessments(), true);
+  }
+
+  async updateAssessments<T>(mutate: (draft: AssessmentData) => T): Promise<T> {
+    if (this.inUpdate) throw new Error('Nested state updates are not supported.');
+    return this.transaction(() => {
+      this.inUpdate = true;
+      try {
+        const draft = this.loadAssessments();
+        const result = mutate(draft);
+        if (result && typeof (result as { then?: unknown }).then === 'function') throw new Error('State mutation must be synchronous.');
+        const data = assessmentDataSchema.parse(draft);
+        this.db.prepare('INSERT INTO assessment_state (learner_id, payload) VALUES (?, ?) ON CONFLICT(learner_id) DO UPDATE SET payload = excluded.payload')
+          .run(this.learnerId, JSON.stringify(data));
+        return result;
+      } finally { this.inUpdate = false; }
+    });
   }
 
   async readLearning(): Promise<LearningData> {

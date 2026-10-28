@@ -36,7 +36,7 @@ export interface LearningMaterial {
 export interface LearningRun {
   id: string; requestId: string; status: 'queued' | 'running' | 'complete' | 'failed';
   kind: 'chat' | 'prepare' | 'review'; createdAt: string; updatedAt: string;
-  messageId?: string; assistantMessageId?: string; lessonId?: string; proposalId?: string; error?: string;
+  messageId?: string; assistantMessageId?: string; lessonId?: string; proposalId?: string; assessmentId?: string; submissionId?: string; error?: string;
   context?: unknown[]; contextTokens?: number; completedText?: string; baseContextHash?: string;
 }
 export interface LearningEvent {

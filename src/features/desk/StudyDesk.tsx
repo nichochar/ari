@@ -152,7 +152,7 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
             <Textarea value={reflectionNotes} onChange={event => setReflectionNotes(event.target.value)} rows={3} maxLength={4000} />
           </label>
           <Button variant="primary" loading={reflectionBusy} disabled={confidence === null || reflectionBusy || !!pageBusy || !!sendMode} onClick={() => void saveReflection()}>
-            <Check size={16} /> {reflectionBusy ? 'Saving…' : progress?.status === 'completed' ? 'Save another reflection' : 'Mark complete and save'}
+            {reflectionBusy ? 'Saving…' : progress?.status === 'completed' ? 'Save another reflection' : 'Mark complete and save'} <Check size={16} />
           </Button>
           {reflectionMessage && <p className="status-line" role="status">{reflectionMessage}</p>}
           {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <AriSun size={28} />}{reviewStatus}</p>}

@@ -29,8 +29,8 @@ async function fixture(ai?: AIAsk, personalizationProvider?: LearningAgentProvid
     url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   };
   const close = async () => { await stop(); await rm(dir, { recursive: true, force: true }); };
-  const request = (route: string, method = 'GET', data?: unknown, headers?: HeadersInit) => fetch(url + route, {
-    method, headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
+  const request = (route: string, method = 'GET', data?: unknown, headers?: HeadersInit, signal?: AbortSignal) => fetch(url + route, {
+    method, signal, headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   return { path, dir, close, restart, request };
@@ -140,7 +140,7 @@ test('unreadable work has no score, while its submitted image is journaled', asy
     const image = 'data:image/png;base64,' + Buffer.from([137,80,78,71,13,10,26,10]).toString('base64');
     const result = await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'check', image });
     assert.equal(result.status, 200);
-    const response = await result.json();
+    const response = (await result.json()).response;
     assert.equal(response.kind, 'clarify');
     assert.equal(response.score, null);
     assert.deepEqual(response.criteria, []);
@@ -166,7 +166,7 @@ test('server computes rubric score and does not auto-complete progress', async (
   try {
     const result = await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'check', message: 'I wrote a slope equation.' });
     assert.equal(result.status, 200);
-    const response = await result.json();
+    const response = (await result.json()).response;
     const expected = Math.round(100 * rubric[0].points / rubric.reduce((sum, r) => sum + r.points, 0));
     assert.equal(response.score, expected);
     const state = await (await fx.request('/api/state')).json();
@@ -183,7 +183,7 @@ test('hint requests suppress model scores and increment hint count', async () =>
   try {
     const result = await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'hint' });
     assert.equal(result.status, 200);
-    const response = await result.json();
+    const response = (await result.json()).response;
     assert.equal(response.kind, 'hint');
     assert.equal(response.score, null);
     const state = await (await fx.request('/api/state')).json();
@@ -202,7 +202,7 @@ test('question mode needs a question and stays ungraded', async () => {
     assert.equal(missing.status, 400);
     const asked = await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'question', message: 'What does slope mean?' });
     assert.equal(asked.status, 200);
-    const response = await asked.json();
+    const response = (await asked.json()).response;
     assert.equal(response.kind, 'explanation');
     assert.equal(response.score, null);
     assert.deepEqual(response.criteria, []);
@@ -239,7 +239,7 @@ test('generated math fixes doubled commands while preserving matrix row breaks',
   assert.equal(fixed.prompt, `$t${slash}geq0$ and ${matrix}`);
 });
 
-test('image and origin validation, local plan fallback, and disabled AI', async () => {
+test('image and origin validation and disabled AI', async () => {
   const fx = await fixture();
   try {
     assert.equal((await fx.request('/api/health')).status, 200);
@@ -250,12 +250,6 @@ test('image and origin validation, local plan fallback, and disabled AI', async 
     assert.equal(foreign.status, 403);
     const unavailable = await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'hint' });
     assert.equal(unavailable.status, 503);
-    const plan = await fx.request('/api/plan', 'POST', {});
-    assert.equal(plan.status, 200);
-    const result = await plan.json();
-    assert.match(result.title, /local/);
-    assert.ok(result.weeks.length >= 1);
-    assert.ok(result.weeks[0].sessions[0].exerciseId);
     const exportResponse = await fx.request('/api/export');
     assert.equal(exportResponse.status, 200);
     assert.equal(exportResponse.headers.get('content-disposition'), 'attachment; filename="ari-data.json"');
@@ -381,7 +375,7 @@ test('several irrelevant pages cannot receive a grade', async () => {
     }
     const response = await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', pageIds: pages });
     assert.equal(response.status, 200);
-    const answer = await response.json();
+    const answer = (await response.json()).response;
     assert.equal(answer.kind, 'clarify');
     assert.equal(answer.score, null);
     assert.deepEqual(answer.criteria, []);
@@ -467,45 +461,16 @@ test('daily review uses dated evidence, is idempotent, and stores observations f
     assert.equal(evidence.reflections.length, 1);
     assert.equal(JSON.stringify(evidence).includes('data:image/'), false);
     await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Another attempt.' });
-    const plan = await (await fx.request('/api/plan', 'POST', {})).json();
     const chatPayload = seen.filter(call => call.task === 'tutor').at(-1)!.payload as { memories: string[] };
-    const planPayload = seen.find(call => call.task === 'plan')!.payload as { memories: string[]; completedModuleIds: string[];
-      candidateSchedule: Array<{ sessions: Array<{ moduleId: string }> }> };
     assert.equal(chatPayload.memories, undefined);
-    assert.equal(planPayload.memories, undefined);
     const note = await (await fx.request(`/api/learning/personalization/file?path=${encodeURIComponent(`memories/reviews/${review.date}-${review.id}.md`)}`)).json();
     assert.match(note.content, /Alex wants quicker difficulty progression/);
     for (const call of seen) { assert.match(call.instructions, /<TUTOR.md>[\s\S]+<USER.md>/); assert.doesNotMatch(call.instructions, /Alex wants quicker difficulty progression/); }
-    assert.deepEqual(planPayload.completedModuleIds, []);
-    assert.equal(planPayload.candidateSchedule[0].sessions[0].moduleId, exercises[0].moduleId);
-    assert.match(plan.adjustment, /review informed/);
     await fx.request('/api/reflections', 'POST', { exerciseId, confidence: 4, notes: 'Units now clearer.' });
     const revised = await (await fx.request('/api/reviews/daily', 'POST', reviewRequest)).json();
     assert.notEqual(revised.evidenceFingerprint, review.evidenceFingerprint);
     assert.equal(revised.evidenceReflectionIds.length, 2);
     assert.equal(seen.filter(call => call.task === 'review').length, 2);
-  } finally { await fx.close(); }
-});
-
-test('AI planning receives completed modules and an order that satisfies prerequisites', async () => {
-  let candidate: { weeks: unknown[] } | undefined;
-  let completed: string[] = [];
-  const ai: AIAsk = async (task, _instructions, payload) => {
-    if (task !== 'plan') return tutorReply;
-    const p = payload as { completedModuleIds: string[]; candidateSchedule: unknown[] };
-    completed = p.completedModuleIds;
-    candidate = { weeks: p.candidateSchedule };
-    return { title: 'Adaptive tutor plan', summary: 'Start with the next available topics.', adjustment: 'Functions are complete.', weeks: p.candidateSchedule };
-  };
-  const fx = await fixture(ai);
-  try {
-    for (const exercise of exercises.filter(item => item.moduleId === 'functions'))
-      await fx.request(`/api/progress/${exercise.id}`, 'PUT', { status: 'completed', confidence: 4 });
-    const result = await (await fx.request('/api/plan', 'POST', {})).json();
-    assert.deepEqual(completed, ['functions']);
-    assert.equal(candidate?.weeks.length, 4);
-    assert.equal(result.title, 'Adaptive tutor plan');
-    assert.equal(result.weeks[0].sessions[0].moduleId, 'units-vectors');
   } finally { await fx.close(); }
 });
 
@@ -540,7 +505,7 @@ test('Send never grades even when the model recognizes assessment intent and ret
     for (const message of ['What should I try?', 'Is this correct?', 'Vérifie mon calcul, s’il te plaît.', 'Please grade this.']) {
       const result = await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message, image: png });
       assert.equal(result.status, 200);
-      const response = await result.json();
+      const response = (await result.json()).response;
       assert.equal(response.kind, 'explanation');
       assert.equal(response.score, null);
       assert.deepEqual(response.criteria, []);
@@ -558,7 +523,7 @@ test('a chat question with an irrelevant or unreadable photo still receives an e
   const fx = await fixture(async () => ({ ...tutorReply, kind: 'feedback', feedback: 'Slope is change in output divided by change in time.',
     assessmentRequested: true, workRelevant: false, workLegible: false, readable: false }));
   try {
-    const response = await (await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'chat', message: 'Why do I divide by time?', image: png })).json();
+    const response = (await (await fx.request('/api/tutor', 'POST', { exerciseId: exercises[0].id, mode: 'chat', message: 'Why do I divide by time?', image: png })).json()).response;
     assert.equal(response.kind, 'explanation');
     assert.equal(response.feedback, 'Slope is change in output divided by change in time.');
     assert.equal(response.score, null);
@@ -611,10 +576,10 @@ test('Grade then Send preserves assessment context and score across reloads with
   const fx = await fixture(ai);
   try {
     const exerciseId = exercises[0].id;
-    const graded = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', message: 'I calculated the slope.', image: png })).json();
+    const graded = (await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', message: 'I calculated the slope.', image: png })).json()).response;
     assert.equal(graded.kind, 'feedback');
     assert.ok(graded.score > 0 && graded.score < 100);
-    const followup = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Why are the units wrong? Is this correct now?', image: photo(2) })).json();
+    const followup = (await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'chat', message: 'Why are the units wrong? Is this correct now?', image: photo(2) })).json()).response;
     assert.equal(followup.kind, 'explanation');
     assert.equal(followup.score, null);
     assert.deepEqual(followup.criteria, []);
@@ -630,7 +595,7 @@ test('Grade then Send preserves assessment context and score across reloads with
     assert.equal(state.sessions[1].response.score, null);
     assert.ok(state.sessions.every((session: { exerciseId: string; snapshotId: string }) => session.exerciseId === exerciseId && session.snapshotId));
     assert.notEqual(state.sessions[0].snapshotId, state.sessions[1].snapshotId);
-    const regraded = await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', image: png })).json();
+    const regraded = (await (await fx.request('/api/tutor', 'POST', { exerciseId, mode: 'check', image: png })).json()).response;
     assert.equal(regraded.score, graded.score);
   } finally { await fx.close(); }
 });
@@ -798,5 +763,165 @@ test('lesson-only daily reviews use dated lesson evidence and keep observations 
     assert.notEqual(revised.evidenceFingerprint, review.evidenceFingerprint);
     assert.equal(revised.evidenceLessonSessionIds.length, 2);
     assert.equal((await fx.request('/api/reviews/daily', 'POST', { ...input, date: '2000-01-01' })).status, 400);
+  } finally { await fx.close(); }
+});
+
+for (const mode of ['hint', 'check'] as const) test(`desk ${mode} retries share a pending result and replay the saved session after restart`, async () => {
+  let calls = 0;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const fx = await fixture(async () => { calls++; entered(); await gate; return { ...tutorReply,
+    observation: 'The learner wrote the slope formula.', readable: true, workRelevant: true, workLegible: true,
+    criteria: exercises[0].rubric.map(item => ({ criterion: item.criterion, awarded: item.points, max: item.points, comment: 'Shown.' })),
+  }; });
+  const controller = new AbortController();
+  try {
+    const exerciseId = exercises[0].id;
+    const page = await (await fx.request(`/api/exercises/${exerciseId}/pages`, 'POST', { image: photo(1) })).json();
+    const input = { id: randomUUID(), exerciseId, mode, message: 'My slope calculation.', pageIds: [page.id], image: photo(2) };
+    const interrupted = fx.request('/api/tutor', 'POST', input, undefined, controller.signal);
+    const aborted = assert.rejects(interrupted, { name: 'AbortError' });
+    await started;
+    controller.abort();
+    await aborted;
+    const duplicate = fx.request('/api/tutor', 'POST', input);
+    const concurrent = fx.request('/api/tutor', 'POST', input);
+    assert.equal((await fx.request('/api/tutor', 'POST', { ...input, message: 'Different work.' })).status, 409);
+    release();
+    const result = await duplicate;
+    assert.equal(result.status, 200);
+    const session = await result.json();
+    assert.deepEqual(await (await concurrent).json(), session);
+    assert.equal(session.id, input.id);
+    assert.equal(session.requestText, input.message);
+    assert.equal(session.snapshotIds.length, 2);
+    assert.equal(session.snapshotIds[0], page.snapshotId);
+    assert.equal(session.response.score, mode === 'check' ? 100 : null);
+    assert.equal(calls, 1);
+    let state = await (await fx.request('/api/state')).json();
+    assert.deepEqual(state.sessions, [session]);
+    assert.equal(state.progress[exerciseId].hintCount, mode === 'hint' ? 1 : 0);
+    await fx.request(`/api/exercises/${exerciseId}/pages/${page.id}`, 'DELETE');
+    await fx.request('/api/profile', 'PATCH', { language: 'fr' });
+    await fx.restart();
+    assert.deepEqual(await (await fx.request('/api/tutor', 'POST', input)).json(), session);
+    for (const patch of [{ exerciseId: exercises[1].id }, { mode: 'chat' }, { image: photo(3) }, { pageIds: [] }, { hintLevel: 2 }, { language: 'fr' }])
+      assert.equal((await fx.request('/api/tutor', 'POST', { ...input, ...patch })).status, 409);
+    state = await (await fx.request('/api/state')).json();
+    assert.deepEqual(state.sessions, [session]);
+    assert.equal(state.progress[exerciseId].hintCount, mode === 'hint' ? 1 : 0);
+    assert.equal(calls, 1);
+  } finally { controller.abort(); release(); await fx.close(); }
+});
+
+test('desk failed requests can retry with the same ID without saving partial work', async () => {
+  let failure = true;
+  const fx = await fixture(async () => { if (failure) throw new Error('AI_TIMEOUT'); return tutorReply; });
+  try {
+    const input = { id: randomUUID(), exerciseId: exercises[0].id, mode: 'hint' };
+    assert.equal((await fx.request('/api/tutor', 'POST', { ...input, id: 'invalid' })).status, 400);
+    assert.equal((await fx.request('/api/tutor', 'POST', input)).status, 504);
+    const before = await (await fx.request('/api/state')).json();
+    assert.deepEqual(before.sessions, []);
+    assert.deepEqual(before.progress, {});
+    failure = false;
+    const saved = await (await fx.request('/api/tutor', 'POST', input)).json();
+    assert.equal(saved.id, input.id);
+    assert.deepEqual(await (await fx.request('/api/tutor', 'POST', input)).json(), saved);
+    assert.equal((await (await fx.request('/api/state')).json()).progress[input.exerciseId].hintCount, 1);
+  } finally { await fx.close(); }
+});
+
+test('loopback origins accept the current custom port and Vite but reject foreign hosts and origins', async () => {
+  const fx = await fixture();
+  try {
+    const health = await fx.request('/api/health');
+    const origin = new URL(health.url).origin;
+    assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
+    const sameOrigin = await fx.request('/api/profile', 'PATCH', { name: 'Synthetic learner' }, { Origin: origin });
+    assert.equal(sameOrigin.status, 200);
+    assert.equal(sameOrigin.headers.get('access-control-allow-origin'), origin);
+    for (const origin of ['http://127.0.0.1:5173', 'http://localhost:5174', 'http://[::1]:5175'])
+      assert.equal((await fx.request('/api/profile', 'PATCH', { sessionMinutes: 25 }, { Origin: origin })).status, 200);
+    for (const origin of ['https://example.com', 'http://foreign.example:5173', 'http://127.0.0.1.attacker.example:5173', 'http://localhost:65432', 'null', 'https://127.0.0.1:3001']) {
+      const denied = await fx.request('/api/profile', 'PATCH', { name: 'Rejected change' }, { Origin: origin });
+      assert.equal(denied.status, 403);
+      assert.equal(denied.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(denied.headers.get('access-control-allow-origin'), null);
+    }
+    assert.equal((await fx.request('/api/profile', 'PATCH', {}, { Host: 'foreign.example:3001', Origin: 'http://foreign.example:3001' })).status, 403);
+    assert.equal((await fx.request('/api/profile', 'OPTIONS', undefined, { Origin: origin })).status, 204);
+    assert.equal((await (await fx.request('/api/state')).json()).profile.name, 'Synthetic learner');
+    assert.equal((await fx.request('/api/missing')).headers.get('x-content-type-options'), 'nosniff');
+  } finally { await fx.close(); }
+});
+
+test('desk and lesson language defaults remain overridable by learner memory while explicit API language is preserved', async () => {
+  const calls: Array<{ language: string; languageSource: string }> = [];
+  const fx = await fixture(async (_task, _instructions, payload) => { calls.push(payload as typeof calls[number]); return tutorReply; });
+  try {
+    for (const language of [undefined, 'fr']) {
+      await fx.request('/api/tutor', 'POST', { id: randomUUID(), exerciseId: exercises[0].id, mode: 'chat', message: 'A question.', ...(language ? { language } : {}) });
+      await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: modules[0].id, message: 'A question.', ...(language ? { language } : {}) });
+    }
+    assert.deepEqual(calls.map(({ language, languageSource }) => ({ language, languageSource })), [
+      { language: 'en', languageSource: 'profile default' }, { language: 'en', languageSource: 'profile default' },
+      { language: 'fr', languageSource: 'explicit request' }, { language: 'fr', languageSource: 'explicit request' },
+    ]);
+  } finally { await fx.close(); }
+});
+
+test('oversized Codex requests retain the actionable input error over HTTP', async () => {
+  const message = 'This request is too large. Submit fewer photos or smaller images.';
+  const fx = await fixture(async () => { throw new LearningProviderError('CODEX_INPUT_TOO_LARGE', message); });
+  try {
+    const response = await fx.request('/api/tutor', 'POST', { id: randomUUID(), exerciseId: exercises[0].id, mode: 'hint' });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: message });
+  } finally { await fx.close(); }
+});
+
+test('creating an app never chooses API billing from a key without an explicitly supplied tutor', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ari-explicit-provider-'));
+  const previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'synthetic-unused-key';
+  let app: ReturnType<typeof createApp> | undefined;
+  let server: ReturnType<ReturnType<typeof createApp>['listen']> | undefined;
+  try {
+    app = createApp({ dbPath: join(dir, 'state.sqlite'), legacyStatePath: join(dir, 'legacy.json'), learningConfigured: false });
+    server = app.listen(0, '127.0.0.1');
+    await new Promise<void>(resolve => server!.once('listening', resolve));
+    const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/health`);
+    assert.equal((await response.json()).aiConfigured, false);
+  } finally {
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
+    if (server) await new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()));
+    if (app) { app.locals.learning.stop(); app.locals.assessments.stop(); (app.locals.store as StateStore).close(); }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the retired planner returns 404 without AI calls and preserves archived plans through writes, restart and export', async () => {
+  let calls = 0;
+  const fx = await fixture(async () => { calls++; return tutorReply; });
+  const archived = { title: 'Archived four-week plan', summary: 'A previously saved study schedule.', adjustment: 'Retained historical data.',
+    weeks: [{ week: 1, focus: 'Functions', moduleIds: [exercises[0].moduleId], sessions: [{ title: exercises[0].title,
+      moduleId: exercises[0].moduleId, exerciseId: exercises[0].id, minutes: 25 }] }] };
+  try {
+    const seed = new StateStore(fx.path, { legacyPath: join(fx.dir, 'unused.json') });
+    try { await seed.update(state => { state.plan = archived; }); } finally { seed.close(); }
+    assert.equal((await fx.request('/api/plan', 'POST', {})).status, 404);
+    assert.equal(calls, 0);
+    assert.deepEqual((await (await fx.request('/api/state')).json()).plan, archived);
+    assert.equal((await fx.request('/api/profile', 'PATCH', { sessionMinutes: 30 })).status, 200);
+    await fx.restart();
+    const state = await (await fx.request('/api/state')).json();
+    assert.equal(state.profile.sessionMinutes, 30);
+    assert.deepEqual(state.plan, archived);
+    const exported = await (await fx.request('/api/export')).json();
+    assert.deepEqual(exported.plan, archived);
+    assert.equal(calls, 0);
   } finally { await fx.close(); }
 });

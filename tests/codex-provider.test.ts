@@ -22,7 +22,7 @@ test('conversation uses Astra high while other tasks retain their configured mod
   assert.ok(args.includes('cli_auth_credentials_store="file"'));
   assert.ok(args.includes('forced_login_method="chatgpt"'));
   assert.equal(args[args.indexOf('--sandbox') + 1], 'read-only');
-  for (const task of ['generate', 'verify', 'plan', 'review'] as const) {
+  for (const task of ['generate', 'verify', 'review'] as const) {
     assert.deepEqual(codexSettings(task, env), { model: 'gpt-5.6-sol', reasoningEffort: 'low' });
   }
 });

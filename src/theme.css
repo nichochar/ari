@@ -31,7 +31,12 @@
   --ari-photo-bg: #17282f;
   --ari-user-bubble: color-mix(in srgb, var(--ari-secondary) 9%, var(--ari-surface));
   --ari-shadow: 0 3px 12px color-mix(in srgb, var(--ari-text) 5%, transparent);
-  --ari-radius: 6px;
+  --ari-radius-small: 4px;
+  --ari-radius-control: 8px;
+  --ari-radius-surface: 12px;
+  --ari-radius-full: 9999px;
+  --ari-radius-surface-inner: calc(var(--ari-radius-surface) - 1px);
+  --radius: var(--ari-radius-control);
   --ari-control-height: 36px;
   --ari-control-compact: 30px;
 }

@@ -5,8 +5,9 @@ import type { Curriculum, LearningData, LearningLesson, LearningProposal, Learni
 import type { Assessment, AssessmentSubmission } from '../shared/assessments.js';
 import type { Exercise, Profile } from '../shared/types.js';
 import { exerciseSchema } from './schema.js';
+import { MAX_MAIN_MESSAGE_LENGTH } from './learning-schema.js';
 import { StateStore } from './state.js';
-import { createLearningProvider, LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
+import { LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
 import { createLearningMaterial, readPublicMaterial } from './learning-materials.js';
 import { PersonalizationError, PersonalizationWorkspace } from './personalization.js';
 import { executeWorkspaceTool, personalizationInstructions, profileDefaults, workspaceTools } from './personalization-tools.js';
@@ -74,7 +75,8 @@ export class LearningService {
   private scheduled = new Set<string>();
   private stopped = false;
   private onboardingChecked = false;
-  constructor(readonly store: StateStore, readonly provider: LearningAgentProvider | null | undefined = createLearningProvider(), readonly workspace: PersonalizationWorkspace) {}
+  private streaming = new Map<string, string>();
+  constructor(readonly store: StateStore, readonly provider: LearningAgentProvider | null | undefined, readonly workspace: PersonalizationWorkspace) {}
   private requireProvider() { if (!this.provider) throw new LearningError(503, 'The main tutor is not connected. Check the configured ChatGPT sign-in or API connection, then retry.'); return this.provider; }
   private async changed() { this.events.emit('change'); }
   private async generate<T = unknown>(instructions: string, payload: unknown, schema: Record<string, unknown>): Promise<T> {
@@ -84,7 +86,8 @@ export class LearningService {
     await this.ensureOnboarding();
     const d = await this.store.readLearning();
     const personalization = await this.workspace.coreView();
-    return { personalization, curricula: d.curricula, lessons: d.lessons, exercises: d.exercises, messages: d.messages.filter(m => !m.proactive || m.deliveredAt),
+    return { personalization, curricula: d.curricula, lessons: d.lessons, exercises: d.exercises, messages: d.messages.filter(m => !m.proactive || m.deliveredAt).map(m =>
+      this.streaming.has(m.id) && (m.status === 'pending' || m.status === 'streaming') ? { ...m, content: this.streaming.get(m.id)!, status: 'streaming' as const } : m),
       proposals: d.proposals, memory: { content: personalization.user.content, revision: personalization.user.revision, updatedAt: personalization.user.updatedAt, updatedBy: personalization.user.actor === 'ari' ? 'ari' : 'user' }, materials: d.materials.map(({ text: _text, sourceData: _sourceData, ...m }) => m), runs: d.runs.map(({ context: _context, contextTokens: _tokens, completedText: _completedText, ...r }) => r),
       events: d.events.map(({ data: _data, ...event }) => event),
       unreadCount: d.messages.filter(m => m.proactive && m.deliveredAt && !m.readAt).length,
@@ -98,9 +101,10 @@ export class LearningService {
     });
     for (const id of ids) this.schedule(id);
     const state = await this.store.read();
-    for (const reflection of state.reflections) await this.reviewReflection(reflection.id);
+    const reviewed = new Set((await this.store.readLearning()).reviewedEvidenceIds);
+    for (const reflection of state.reflections) if (!reviewed.has(reflection.id)) await this.reviewReflection(reflection.id);
     for (const assessment of (await this.store.readAssessments()).assessments) for (const submission of assessment.submissions)
-      if (submission.status === 'complete') await this.reviewAssessment(assessment.id, submission.id);
+      if (submission.status === 'complete' && !reviewed.has(submissionHistoryId(assessment.id, submission.id))) await this.reviewAssessment(assessment.id, submission.id);
   }
   stop() { this.stopped = true; }
   async settle() { await this.tail; }
@@ -317,13 +321,14 @@ export class LearningService {
       else if (run.kind === 'prepare') await this.runPreparation(run);
       else if (run.assessmentId && run.submissionId) await this.runAssessmentReview(run);
       else await this.runReview(run);
-      await this.store.updateLearning(d => { const r = d.runs.find(r => r.id === id)!; r.status = 'complete'; r.updatedAt = now(); delete r.error; });
+      if ((await this.store.readLearning()).runs.find(r => r.id === id)?.status !== 'complete')
+        await this.store.updateLearning(d => { const r = d.runs.find(r => r.id === id)!; r.status = 'complete'; r.updatedAt = now(); delete r.error; });
     } catch (error) {
       const message = safeLearningFailure(error);
       await this.store.updateLearning(d => { const r = d.runs.find(r => r.id === id)!; r.status = 'failed'; r.error = message; r.updatedAt = now();
-        const m = d.messages.find(m => m.id === r.assistantMessageId); if (m) { m.status = 'failed'; m.error = message; }
+        const m = d.messages.find(m => m.id === r.assistantMessageId); if (m) { m.content = (this.streaming.get(m.id) ?? m.content).slice(0, MAX_MAIN_MESSAGE_LENGTH); m.status = 'failed'; m.error = message; }
         const l = d.lessons.find(l => l.id === r.lessonId); if (l && l.status !== 'ready') { l.status = 'failed'; l.error = message; } });
-    }
+    } finally { if (run.assistantMessageId) this.streaming.delete(run.assistantMessageId); }
     await this.changed();
   }
   private async runChat(run: LearningRun) {
@@ -335,7 +340,9 @@ export class LearningService {
     const threshold = Number.isFinite(configuredThreshold) && configuredThreshold >= 1 && configuredThreshold <= 200000 ? configuredThreshold : 64000;
     if (!run.context && Math.max(d.contextTokens, Math.ceil(JSON.stringify(d.context).length / 3)) + Math.ceil((message.content.length + JSON.stringify(learningTools).length + instructions.length + coreInstructions.length) / 3) >= threshold && d.context.length) {
       const compacted = await provider.compact(d.context, instructions + '\n' + coreInstructions);
-      await this.store.updateLearning(s => { s.context = compacted; s.contextTokens = provider.contextTokens?.(compacted) ?? Math.ceil(JSON.stringify(compacted).length / 4); s.compactedAt = now();
+      await this.store.updateLearning(s => {
+        const appended = contextHash(s.context.slice(0, d.context.length)) === contextHash(d.context) ? s.context.slice(d.context.length) : [];
+        s.context = [...compacted, ...appended]; s.contextTokens = provider.contextTokens?.(s.context) ?? Math.ceil(JSON.stringify(s.context).length / 4); s.compactedAt = now();
         s.events.push({ id: randomUUID(), runId: run.id, type: 'compaction', createdAt: now(), data: { previousTokens: d.contextTokens } }); });
       d = await this.store.readLearning();
     }
@@ -345,23 +352,36 @@ export class LearningService {
     await this.store.updateLearning(s => { const r = s.runs.find(r => r.id === run.id)!; r.context = context; r.baseContextHash ??= contextHash(d.context); });
     const currentInstructions = async () => `${instructions}\n${await personalizationInstructions(this.workspace)}\nDesk scheduling and language defaults (USER.md and current explicit learner preferences take precedence): ${JSON.stringify(profileDefaults(profile))}\n${(await this.workspace.onboarding()).status === 'new' ? 'Conversational setup is active. Ask only one friendly question at a time to understand interests, starting background, and useful help preferences. Save concise confirmed details in USER.md using workspace tools, then call complete_onboarding when the learner is ready. They can skip. Do not create a curriculum during setup; proposals still need a deliberate learner action.' : 'Setup is complete, imported, or skipped. The learner can revisit personalization at any time.'}\n${focus ? `Visible curriculum focus: ${focus.id}, ${focus.title}. Retrieve details if needed.` : 'No curriculum focus selected.'}\nAttached material IDs: ${(message.materialIds ?? []).join(', ') || 'none'}`;
     const runInstructions = await currentInstructions();
-    let streaming = ''; let lastWrite = 0;
+    let streaming = ''; let lastEmission = 0;
     const result = await provider.run({ instructions: runInstructions, refreshInstructions: currentInstructions, input: context, tools: learningTools, runKey: run.id, resumeText: run.completedText,
       onText: async (delta: string) => {
+        if (delta.length > MAX_MAIN_MESSAGE_LENGTH - streaming.length) {
+          streaming += delta.slice(0, MAX_MAIN_MESSAGE_LENGTH - streaming.length);
+          this.streaming.set(run.assistantMessageId!, streaming);
+          throw new LearningError(502, 'The tutor response exceeded the saved message limit. Your partial reply is saved; retry with a smaller request.');
+        }
         streaming += delta;
-        if (Date.now() - lastWrite < 80) return;
-        lastWrite = Date.now();
-        await this.store.updateLearning(s => { const m = s.messages.find(m => m.id === run.assistantMessageId)!; m.content = streaming; m.status = 'streaming'; });
-        await this.changed();
+        this.streaming.set(run.assistantMessageId!, streaming);
+        if (Date.now() - lastEmission < 80) return;
+        lastEmission = Date.now();
+        this.events.emit('message', { id: run.assistantMessageId!, content: streaming, status: 'streaming' });
       },
       onCheckpoint: async (context: unknown[], inputTokens: number, completedText?: string) => {
-        await this.store.updateLearning(s => { const r = s.runs.find(r => r.id === run.id)!; r.context = context; r.contextTokens = inputTokens; if (completedText !== undefined) r.completedText = completedText; });
+        await this.store.updateLearning(s => {
+          const r = s.runs.find(r => r.id === run.id)!; r.context = context; r.contextTokens = inputTokens; if (completedText !== undefined) r.completedText = completedText;
+          if (streaming) { const m = s.messages.find(m => m.id === run.assistantMessageId)!; m.content = streaming; m.status = 'streaming'; }
+        });
       },
       executeTool: async (name: string, args: unknown, callId: string) => this.executeTool(run, name, args, callId),
     });
+    if (result.text.length > MAX_MAIN_MESSAGE_LENGTH) {
+      this.streaming.set(run.assistantMessageId!, result.text.slice(0, MAX_MAIN_MESSAGE_LENGTH));
+      throw new LearningError(502, 'The tutor response exceeded the saved message limit. Your partial reply is saved; retry with a smaller request.');
+    }
     await this.store.updateLearning(s => {
       const currentRun = s.runs.find(r => r.id === run.id)!;
-      s.context = result.context ?? (currentRun.context && currentRun.context.length > context.length ? currentRun.context : [...context, ...result.output]);
+      const appended = contextHash(s.context.slice(0, d.context.length)) === contextHash(d.context) ? s.context.slice(d.context.length) : [];
+      s.context = [...(result.context ?? (currentRun.context && currentRun.context.length > context.length ? currentRun.context : [...context, ...result.output])), ...appended];
       delete currentRun.context; delete currentRun.contextTokens; delete currentRun.completedText; s.contextTokens = provider.contextTokens?.(s.context) ?? result.inputTokens + Math.ceil(result.text.length / 4);
       const m = s.messages.find(m => m.id === run.assistantMessageId)!; m.content = result.text; m.status = 'complete';
       currentRun.status = 'complete'; currentRun.updatedAt = now(); delete currentRun.error;

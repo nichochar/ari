@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -146,14 +146,17 @@ export function normalizeMathDelimiters(source: string): string {
   return result;
 }
 
-export function Markdown({ children, workspaceLinks = true }: { children: string; workspaceLinks?: boolean }) {
+export const Markdown = memo(function Markdown({ children, workspaceLinks = true }: { children: string; workspaceLinks?: boolean }) {
   return <div className="markdown"><ReactMarkdown
     remarkPlugins={[remarkGfm, remarkMath]}
     rehypePlugins={[rehypeKatex]}
     components={{
       a: ({ href, title, children }) => {
         const path = workspaceDocumentPath(href);
-        if (!path) return <a href={href} title={title}>{children}</a>;
+        if (!path) {
+          const external = /^(?:https?:)?\/\//i.test(href || '');
+          return <a href={href} title={title} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>{children}</a>;
+        }
         // A note's own workspace references stay text, preventing nested dialogs
         // and accidental navigation while reading the original reference.
         return workspaceLinks ? <WorkspaceDocumentLink path={path} title={title}>{children}</WorkspaceDocumentLink> : <span title={path}>{children}</span>;
@@ -161,4 +164,4 @@ export function Markdown({ children, workspaceLinks = true }: { children: string
       table: ({ children }) => <div className="markdown-table" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
     }}
   >{normalizeMathDelimiters(children)}</ReactMarkdown></div>;
-}
+});

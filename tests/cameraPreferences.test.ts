@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createScopedStorage } from '../src/storage';
 import { cameraPreferencesKey, readCameraPreferences, saveCameraPreferences } from '../src/cameraPreferences';
 
 function memoryStorage(initial: string | null = null) {
@@ -39,4 +40,20 @@ test('blocked storage does not stop camera controls from working', () => {
   };
   assert.deepEqual(readCameraPreferences(storage), { rotation: 90, mirrored: false });
   assert.doesNotThrow(() => saveCameraPreferences({ rotation: 270, mirrored: true }, storage));
+});
+
+test('camera previews retain independent orientations while existing live preferences keep their key', () => {
+  const entries = new Map([[cameraPreferencesKey, JSON.stringify({ rotation: 270, mirrored: true })]]);
+  const storage = {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => { entries.set(key, value); },
+    removeItem: (key: string) => { entries.delete(key); },
+  };
+  const live = createScopedStorage(storage);
+  const preview = createScopedStorage(storage, '?onboardingPreview=0caa4e83-a9ec-4c24-af35-22d9a5c405e0');
+  assert.deepEqual(readCameraPreferences(live), { rotation: 270, mirrored: true });
+  assert.deepEqual(readCameraPreferences(preview), { rotation: 90, mirrored: false });
+  saveCameraPreferences({ rotation: 180, mirrored: false }, preview);
+  assert.deepEqual(readCameraPreferences(preview), { rotation: 180, mirrored: false });
+  assert.deepEqual(readCameraPreferences(live), { rotation: 270, mirrored: true });
 });

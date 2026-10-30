@@ -142,6 +142,8 @@ test('native completed turn is recovered after crash between final item and comp
   const recovered = await p.run(request(saved));
   assert.equal(recovered.text, 'A useful hint.'); assert.equal(c.calls.filter(v => v.method === 'turn/start').length, count);
   assert.equal((recovered.context![0] as CodexLearningContext).state, 'complete');
+  assert.deepEqual(c.calls.find(v => v.method === 'thread/turns/list')?.params,
+    { threadId: (recovered.context![0] as CodexLearningContext).threadId, limit: 1, sortDirection: 'desc', itemsView: 'full' });
 });
 
 test('tool calls checkpoint before mutation and deduplicate regenerated mutation IDs on interrupted retry', async () => {
@@ -250,6 +252,55 @@ test('compaction before the first chat preserves dynamic tool configuration duri
   await p.run(request([...compacted, { role: 'user', content: 'My next question.' }]));
   assert.equal(c.calls.filter(v => v.method === 'thread/start').length, 1);
   assert.equal(c.calls.filter(v => v.method === 'thread/fork').length, 1);
+});
+
+test('assessment runs and caller mutations cannot replace the configured compaction catalog', async () => {
+  const c = new FakeCodex();
+  const configured = [structuredClone(tool), { ...tool, name: 'propose_learning' }];
+  const expected = structuredClone(configured);
+  const p = createCodexLearningProvider({ client: c, cwd: '/tmp/ari-codex-provider-test', tools: configured });
+  configured[0].name = 'changed_after_configuration';
+  configured[0].parameters = { type: 'null' };
+  configured.pop();
+  await p.run({ ...request(), ephemeral: true, tools: [{ ...tool, name: 'workspace_read' }] });
+  await p.compact([{ role: 'user', content: 'Earlier learner question.' }], 'Tutor instructions.');
+  const start = c.calls.filter(v => v.method === 'thread/start').at(-1)!.params;
+  assert.deepEqual(start.dynamicTools, expected.map(t => ({ type: 'function', name: t.name, description: t.description, inputSchema: t.parameters })));
+});
+
+test('a prior run cannot supply a missing configured catalog for legacy compaction', async () => {
+  const c = new FakeCodex(); const p = provider(c);
+  await p.run(request());
+  await assert.rejects(p.compact([{ role: 'user', content: 'Earlier question.' }], 'Tutor instructions.'), { code: 'CODEX_TOOLS_UNCONFIGURED' });
+});
+
+test('oversized image requests retain an actionable provider error and saved input', async () => {
+  const c = new FakeCodex(); const original = c.request.bind(c);
+  c.request = async <T>(method: string, params: unknown): Promise<T> => {
+    if (method === 'turn/start') throw new CodexTransportError('CODEX_INPUT_TOO_LARGE');
+    return original<T>(method, params);
+  };
+  const input = [{ role: 'user', content: [{ type: 'input_text', text: 'Read my work.' }, { type: 'input_image', image_url: 'data:image/jpeg;base64,c3ludGhldGlj' }] }];
+  let saved: unknown[] = [];
+  await assert.rejects(provider(c).run({ ...request(input), onCheckpoint: context => { saved = structuredClone(context); } }),
+    { code: 'CODEX_INPUT_TOO_LARGE', message: /Remove some attached pages or use smaller photos/ });
+  assert.deepEqual((saved[0] as CodexLearningContext).pendingInput, [
+    { type: 'text', text: 'Read my work.', text_elements: [] }, { type: 'image', url: 'data:image/jpeg;base64,c3ludGhldGlj' },
+  ]);
+});
+
+test('rate and quota failures retain different retry guidance', async () => {
+  for (const [code, message] of [
+    ['CODEX_RATE_LIMIT', /temporarily rate limited.*shortly/],
+    ['CODEX_LIMIT', /usage limit reached.*resets/],
+  ] as const) {
+    const c = new FakeCodex(); const original = c.request.bind(c);
+    c.request = async <T>(method: string, params: unknown): Promise<T> => {
+      if (method === 'turn/start') throw new CodexTransportError(code);
+      return original<T>(method, params);
+    };
+    await assert.rejects(provider(c).run(request()), { code, message });
+  }
 });
 
 test('marker-only retry without an explicit run key returns its completed saved answer', async () => {

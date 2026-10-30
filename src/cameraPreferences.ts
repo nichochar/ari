@@ -1,3 +1,5 @@
+import { appStorage } from './storage';
+
 export interface CameraPreferences { rotation: number; mirrored: boolean }
 type PreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -7,7 +9,7 @@ const defaults: CameraPreferences = { rotation: 90, mirrored: false };
 
 export function readCameraPreferences(storage?: PreferenceStorage): CameraPreferences {
   try {
-    const saved: unknown = JSON.parse((storage ?? window.localStorage).getItem(cameraPreferencesKey) ?? 'null');
+    const saved: unknown = JSON.parse((storage ?? appStorage).getItem(cameraPreferencesKey) ?? 'null');
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return { ...defaults };
     const { rotation, mirrored } = saved as Record<string, unknown>;
     return {
@@ -21,7 +23,7 @@ export function readCameraPreferences(storage?: PreferenceStorage): CameraPrefer
 
 export function saveCameraPreferences(preferences: CameraPreferences, storage?: PreferenceStorage): void {
   try {
-    (storage ?? window.localStorage).setItem(cameraPreferencesKey, JSON.stringify(preferences));
+    (storage ?? appStorage).setItem(cameraPreferencesKey, JSON.stringify(preferences));
   } catch {
     // Camera controls still work when browser storage is blocked or full.
   }

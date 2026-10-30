@@ -3,6 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   codexAppServerEnvironment, createCodexAppServer, CodexTransportError,
   type CodexAppServerOptions,
@@ -139,6 +140,23 @@ test('remote errors are classified without disclosing diagnostics or parameters'
   assert.equal(await client.request('echo', 'still open'), 'still open');
 });
 
+test('temporary rate limits remain distinct from exhausted usage and quota', async t => {
+  const { client } = await fakeServer(t, `
+  if (message.method === 'fail') return send({id:message.id,error:message.params});
+  `);
+  for (const remote of [
+    { code: -1, message: 'Rate limit exceeded private-path' },
+    { code: 'rate_limit_exceeded', message: 'Retry shortly secret-value' },
+    { code: 429, message: 'Too many requests' },
+  ]) await assert.rejects(client.request('fail', remote), transportCode('CODEX_RATE_LIMIT'));
+  for (const remote of [
+    { code: -1, message: 'Usage limit reached' },
+    { code: 'insufficient_quota', message: 'Rate limit exceeded because quota is exhausted' },
+    { code: 429, message: 'No credits remaining' },
+  ]) await assert.rejects(client.request('fail', remote), transportCode('CODEX_LIMIT'));
+  assert.equal(await client.request('echo', 'still open'), 'still open');
+});
+
 test('tool handler errors return sanitized protocol errors', async t => {
   const { client } = await fakeServer(t, `
   if (message.method === 'tool') {
@@ -188,17 +206,88 @@ test('process exit rejects all pending requests without exposing stderr', async 
   ]);
 });
 
-test('request timeout and explicit close reject pending requests and future requests', async t => {
+test('request timeout preserves concurrent work and ignores the late response', async t => {
+  const { client } = await fakeServer(t, `
+  if (message.method === 'late') return setTimeout(() => reply(message, 'too late'), 80);
+  if (message.method === 'concurrent') return setTimeout(() => reply(message, 'completed'), 120);
+  `, { maxPendingRequests: 2 });
+  let closed = false;
+  client.onClose(() => { closed = true; });
+  const late = client.request('late', {}, { timeoutMs: 20 });
+  const concurrent = client.request('concurrent', {});
+  await assert.rejects(late, transportCode('CODEX_TIMEOUT'));
+  assert.equal(await client.request('echo', 'pending slot recovered'), 'pending slot recovered');
+  assert.equal(await concurrent, 'completed');
+  assert.equal(await client.request('echo', 'still open'), 'still open');
+  assert.equal(closed, false);
+});
+
+test('explicit close rejects pending and future requests', async t => {
   const { client } = await fakeServer(t);
-  await assert.rejects(client.request('hang', {}, { timeoutMs: 30 }), transportCode('CODEX_TIMEOUT'));
-  await assert.rejects(client.request('echo', {}), transportCode('CODEX_TIMEOUT'));
-  const second = await fakeServer(t);
-  const pending = second.client.request('hang', {});
-  second.client.close();
+  const pending = client.request('hang', {});
+  client.close();
   await assert.rejects(pending, transportCode('CODEX_CLOSED'));
+  await assert.rejects(client.request('echo', {}), transportCode('CODEX_CLOSED'));
   let notified = false;
-  second.client.onClose(error => { notified = error.code === 'CODEX_CLOSED'; });
+  client.onClose(error => { notified = error.code === 'CODEX_CLOSED'; });
   assert.equal(notified, true);
+});
+
+test('initialization timeout terminates the uninitialized child', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ari-app-server-init-timeout-'));
+  t.after(async () => { await rm(directory, { recursive: true, force: true }); });
+  const authHome = join(directory, 'auth');
+  await mkdir(authHome);
+  await writeFile(join(authHome, 'auth.json'), 'synthetic login fixture');
+  const binary = join(directory, 'codex.cjs');
+  const pidFile = join(directory, 'pid');
+  await writeFile(binary, `#!${process.execPath}
+require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+process.stdin.resume();
+setInterval(() => {}, 1000);
+`, { mode: 0o700 });
+  await assert.rejects(createCodexAppServer({ binary, cwd: join(directory, 'runtime'), stateDir: join(directory, 'state'), authHome, requestTimeoutMs: 1000 }), transportCode('CODEX_TIMEOUT'));
+  const pid = Number(await readFile(pidFile, 'utf8'));
+  const running = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let attempt = 0; attempt < 50 && running(); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(running(), false);
+});
+
+test('image transport preserves the full 25 MB decoded photo budget and its recovery echo', async t => {
+  const { client } = await fakeServer(t, `
+  if (message.method === 'image') {
+    global.syntheticImageUrl = message.params.url;
+    const bytes = Buffer.from(message.params.url.split(',')[1], 'base64');
+    return reply(message, {length:bytes.length,hash:require('node:crypto').createHash('sha256').update(bytes).digest('hex')});
+  }
+  if (message.method === 'thread/turns/list') return reply(message, {data:[{
+    id:'synthetic-turn',status:'completed',itemsView:'full',items:[
+      {type:'userMessage',id:'synthetic-input',content:[{type:'image',url:global.syntheticImageUrl}]},
+      {type:'agentMessage',id:'synthetic-answer',text:'Preserved paper evidence.'}
+    ]
+  }]});
+  `);
+  const bytes = Buffer.alloc(25_000_000, 0xa5);
+  const url = 'data:image/jpeg;base64,' + bytes.toString('base64');
+  const result = await client.request('image', { url });
+  assert.deepEqual(result, { length: bytes.length, hash: createHash('sha256').update(bytes).digest('hex') });
+  const recovered = await client.request<{ data: { items: ({ type: 'userMessage'; content: { url: string }[] } | { type: 'agentMessage'; text: string })[] }[] }>('thread/turns/list',
+    { threadId: 'synthetic-thread', limit: 1, itemsView: 'full' }, { timeoutMs: 10_000 });
+  const image = recovered.data[0].items[0];
+  assert.equal(image.type, 'userMessage');
+  if (image.type === 'userMessage') assert.equal(image.content[0].url, url);
+  assert.deepEqual(recovered.data[0].items[1], { type: 'agentMessage', id: 'synthetic-answer', text: 'Preserved paper evidence.' });
+  assert.equal(await client.request('echo', 'still open'), 'still open');
+});
+
+test('oversized outbound requests fail explicitly without closing concurrent work', async t => {
+  const { client } = await fakeServer(t, `
+  if (message.method === 'concurrent') return setTimeout(() => reply(message, 'completed'), 30);
+  `, { maxOutboundLineBytes: 4096 });
+  const concurrent = client.request('concurrent', {});
+  await assert.rejects(client.request('echo', 'é'.repeat(2100)), transportCode('CODEX_INPUT_TOO_LARGE'));
+  assert.equal(await concurrent, 'completed');
+  assert.equal(await client.request('echo', 'still open'), 'still open');
 });
 
 test('pending request and event queue bounds fail closed', async t => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createScopedStorage } from '../src/storage.js';
+import { appStorage, createScopedStorage } from '../src/storage.js';
 
 function memoryStorage() {
   const entries = new Map<string, string>();
@@ -52,4 +52,44 @@ test('only bounded UUID values create namespaces and UUID casing is consistent',
   const storage = memoryStorage();
   createScopedStorage(storage, '?onboardingPreview=' + firstId.toUpperCase()).setItem('ari:view', 'chat');
   assert.equal(createScopedStorage(storage, '?onboardingPreview=' + firstId).getItem('ari:view'), 'chat');
+});
+
+test('blocked storage access keeps drafts and deletions available in memory', () => {
+  const blocked = createScopedStorage(() => { throw new Error('Storage access denied'); });
+  assert.equal(blocked.getItem('ari:mainDraft'), null);
+  blocked.setItem('ari:mainDraft', 'Unsaved browser draft');
+  assert.equal(blocked.getItem('ari:mainDraft'), 'Unsaved browser draft');
+  blocked.removeItem('ari:mainDraft');
+  assert.equal(blocked.getItem('ari:mainDraft'), null);
+  assert.doesNotThrow(() => appStorage.getItem('ari:view'));
+});
+
+test('quota failures retain new values and deletions instead of reviving stale persisted state', () => {
+  const storage = memoryStorage();
+  storage.setItem('ari:mainDraft', 'Earlier draft');
+  storage.setItem('ari:mainPending', 'Earlier pending request');
+  const full = createScopedStorage({
+    getItem: storage.getItem,
+    setItem() { throw new Error('Quota exceeded'); },
+    removeItem() { throw new Error('Storage blocked'); },
+  });
+  assert.equal(full.getItem('ari:mainDraft'), 'Earlier draft');
+  full.setItem('ari:mainDraft', 'New draft');
+  full.removeItem('ari:mainPending');
+  assert.equal(full.getItem('ari:mainDraft'), 'New draft');
+  assert.equal(full.getItem('ari:mainPending'), null);
+  assert.equal(storage.getItem('ari:mainDraft'), 'Earlier draft');
+  assert.equal(storage.getItem('ari:mainPending'), 'Earlier pending request');
+});
+
+test('cached reads remain usable when storage becomes blocked without hiding normal external edits', () => {
+  const storage = memoryStorage();
+  let blocked = false;
+  const scoped = createScopedStorage(() => { if (blocked) throw new Error('Storage blocked'); return storage; });
+  storage.setItem('ari:mainDraft', 'First draft');
+  assert.equal(scoped.getItem('ari:mainDraft'), 'First draft');
+  storage.setItem('ari:mainDraft', 'Updated in another tab');
+  assert.equal(scoped.getItem('ari:mainDraft'), 'Updated in another tab');
+  blocked = true;
+  assert.equal(scoped.getItem('ari:mainDraft'), 'Updated in another tab');
 });

@@ -3,7 +3,7 @@ import { lstat, mkdir, readlink, realpath, stat, symlink } from 'node:fs/promise
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-export type CodexTransportErrorCode = 'CODEX_UNAVAILABLE' | 'CODEX_TIMEOUT' | 'CODEX_PROTOCOL' | 'CODEX_CLOSED' | 'CODEX_FAILED' | 'CODEX_AUTH' | 'CODEX_LIMIT' | 'CODEX_MODEL' | 'CODEX_UPGRADE';
+export type CodexTransportErrorCode = 'CODEX_UNAVAILABLE' | 'CODEX_TIMEOUT' | 'CODEX_PROTOCOL' | 'CODEX_CLOSED' | 'CODEX_FAILED' | 'CODEX_AUTH' | 'CODEX_LIMIT' | 'CODEX_RATE_LIMIT' | 'CODEX_INPUT_TOO_LARGE' | 'CODEX_MODEL' | 'CODEX_UPGRADE';
 
 /** Never retain server diagnostics, RPC parameters, or credential-bearing errors. */
 export class CodexTransportError extends Error {
@@ -40,6 +40,7 @@ export interface CodexAppServerOptions {
   authHome?: string;
   requestTimeoutMs?: number;
   maxLineBytes?: number;
+  maxOutboundLineBytes?: number;
   maxPendingRequests?: number;
   maxQueuedEvents?: number;
   maxQueuedBytes?: number;
@@ -125,10 +126,12 @@ async function privateCodexHome(stateDir: string, authHome: string): Promise<str
 
 function sanitizedRemoteError(value: unknown): CodexTransportError {
   const message = isRecord(value) && typeof value.message === 'string' ? value.message : '';
-  const code: CodexTransportErrorCode = /usage limit|rate.limit|quota|credits/i.test(message) ? 'CODEX_LIMIT'
-    : /requires a newer version/i.test(message) ? 'CODEX_UPGRADE'
-      : /not supported.*ChatGPT|unknown model|model.*not found/i.test(message) ? 'CODEX_MODEL'
-        : /log.?in|authentication|unauthorized|401/i.test(message) ? 'CODEX_AUTH' : 'CODEX_FAILED';
+  const remoteCode = isRecord(value) ? String(value.code ?? '') : '';
+  const code: CodexTransportErrorCode = /usage.limit|quota|credits/i.test(`${remoteCode} ${message}`) ? 'CODEX_LIMIT'
+    : /rate.limit|too many requests|\b429\b/i.test(`${remoteCode} ${message}`) ? 'CODEX_RATE_LIMIT'
+      : /requires a newer version/i.test(message) ? 'CODEX_UPGRADE'
+        : /not supported.*ChatGPT|unknown model|model.*not found/i.test(message) ? 'CODEX_MODEL'
+          : /log.?in|authentication|unauthorized|401/i.test(message) ? 'CODEX_AUTH' : 'CODEX_FAILED';
   return new CodexTransportError(code);
 }
 
@@ -147,12 +150,13 @@ export async function createCodexAppServer(options: CodexAppServerOptions = {}):
   const cwd = resolve(options.cwd ?? '.local/codex-app-server-runtime');
   const stateDir = resolve(options.stateDir ?? '.local/codex-app-server-state');
   const authHome = resolve(options.authHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'));
-  const maxLineBytes = options.maxLineBytes ?? 8 * 1024 * 1024;
+  const maxLineBytes = options.maxLineBytes ?? 64 * 1024 * 1024;
+  const maxOutboundLineBytes = options.maxOutboundLineBytes ?? 40 * 1024 * 1024;
   const requestTimeoutMs = options.requestTimeoutMs ?? 180_000;
   const maxPending = options.maxPendingRequests ?? 64;
   const maxQueued = options.maxQueuedEvents ?? 1024;
-  const maxQueuedBytes = options.maxQueuedBytes ?? 16 * 1024 * 1024;
-  for (const bound of [maxLineBytes, requestTimeoutMs, maxPending, maxQueued, maxQueuedBytes]) {
+  const maxQueuedBytes = options.maxQueuedBytes ?? 128 * 1024 * 1024;
+  for (const bound of [maxLineBytes, maxOutboundLineBytes, requestTimeoutMs, maxPending, maxQueued, maxQueuedBytes]) {
     if (!Number.isSafeInteger(bound) || bound < 1) throw new CodexTransportError('CODEX_PROTOCOL');
   }
   let codexHome: string;
@@ -200,9 +204,10 @@ export async function createCodexAppServer(options: CodexAppServerOptions = {}):
     if (closed) throw closed;
     let line: string;
     try { line = JSON.stringify(message) + '\n'; } catch { throw new CodexTransportError('CODEX_PROTOCOL'); }
-    if (Buffer.byteLength(line) > maxLineBytes) throw new CodexTransportError('CODEX_PROTOCOL');
+    const bytes = Buffer.byteLength(line);
+    if (bytes > maxOutboundLineBytes) throw new CodexTransportError('CODEX_INPUT_TOO_LARGE');
     // Cap queued writes too; slow/unresponsive children must not grow memory indefinitely.
-    if (child.stdin.writableLength + Buffer.byteLength(line) > maxLineBytes * 2) {
+    if (child.stdin.writableLength + bytes > maxOutboundLineBytes * 2) {
       stop(new CodexTransportError('CODEX_PROTOCOL'));
       throw closed;
     }
@@ -290,7 +295,10 @@ export async function createCodexAppServer(options: CodexAppServerOptions = {}):
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) return Promise.reject(new CodexTransportError('CODEX_PROTOCOL'));
       const id = `ari-${++sequence}`;
       return new Promise<T>((resolveResult, reject) => {
-        const timer = setTimeout(() => stop(new CodexTransportError('CODEX_TIMEOUT')), timeoutMs);
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new CodexTransportError('CODEX_TIMEOUT'));
+        }, timeoutMs);
         pending.set(id, { resolve: value => resolveResult(value as T), reject, timer });
         try { write({ id, method, params }); } catch (error) {
           clearTimeout(timer);

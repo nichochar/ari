@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { isDeepStrictEqual } from 'node:util';
 import type { AssessmentData } from '../shared/assessments.js';
 import { assessmentDataSchema } from './assessment-schema.js';
 import type { AppState, Exercise } from '../shared/types.js';
@@ -275,6 +276,7 @@ export class StateStore {
         const draft = structuredClone(previous);
         const result = mutate(draft);
         if (result && typeof (result as { then?: unknown }).then === 'function') throw new Error('State mutation must be synchronous.');
+        if (isDeepStrictEqual(previous, draft)) return result;
         this.advanceRevisions(previous, draft);
         this.writeLearning(learningDataSchema.parse(draft) as LearningData);
         return result;

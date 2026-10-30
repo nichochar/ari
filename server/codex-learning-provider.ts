@@ -44,6 +44,7 @@ function failure(cause: unknown): LearningProviderError {
   if (code === 'CODEX_UPGRADE') return error(code, 'This Codex version cannot resume the saved conversation. Update Codex, then retry.');
   if (code === 'CODEX_UNAVAILABLE') return error(code, 'Codex could not start. Check the server Codex installation, then retry.');
   if (code === 'CODEX_LIMIT') return error(code, 'Codex usage limit reached. Retry when it resets.');
+  if (code === 'CODEX_INPUT_TOO_LARGE') return error(code, 'The selected photos and conversation exceed the Codex request size limit. Remove some attached pages or use smaller photos, then retry.');
   if (/RATE|LIMIT/i.test(code)) return error('CODEX_RATE_LIMIT', 'Codex is temporarily rate limited. Retry this saved message shortly.');
   return error('CODEX_FAILED', 'Ari could not finish through Codex. Your message is saved; retry to continue.');
 }
@@ -111,7 +112,7 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
   const cwd = resolve(options.cwd ?? '.local/codex-learning/workspace');
   const timeoutMs = options.timeoutMs ?? 240_000;
   let clientPromise: Promise<CodexAppServerClient> | undefined;
-  let knownTools = options.tools ?? [];
+  const configuredTools = structuredClone(options.tools ?? []);
   let bridge: Awaited<ReturnType<typeof createWorkspaceMcpBridge>> | undefined;
   let bridgedRun: { client: CodexAppServerClient; marker?: CodexLearningContext } | undefined;
   const routes = new WeakMap<CodexAppServerClient, Map<string, (rpc: CodexServerRequest) => Promise<unknown>>>();
@@ -183,7 +184,7 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
   }
   async function latestTurn(c: CodexAppServerClient, marker: CodexLearningContext): Promise<ObjectValue | undefined> {
     const response = await c.request<{ data: ObjectValue[] }>('thread/turns/list', {
-      threadId: marker.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full',
+      threadId: marker.threadId, limit: 1, sortDirection: 'desc', itemsView: 'full',
     });
     // This fork belongs to one Ari run. Prefer its latest turn even if turn/start
     // committed in Codex just before Ari saved that new turn id.
@@ -306,7 +307,6 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
     model: `${model} · ${effort} · Codex`,
     contextTokens: codexLearningContextTokens,
     async run(request) {
-      knownTools = request.tools;
       let usingBridge = false;
       try {
         const c = await client();
@@ -427,9 +427,9 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
     async compact(input, instructions) {
       try {
         const c = await client();
-        if (!input.some(isCodexLearningContext) && !knownTools.length)
+        if (!input.some(isCodexLearningContext) && !configuredTools.length)
           throw error('CODEX_TOOLS_UNCONFIGURED', 'Ari’s Codex tool definitions are required before importing this saved context. Its history is preserved.');
-        const { marker } = await establish(c, input, instructions, knownTools);
+        const { marker } = await establish(c, input, instructions, configuredTools);
         await observe(c, marker, undefined, () => c.request('thread/compact/start', { threadId: marker.threadId }), true);
         marker.tools = []; marker.messages = []; delete marker.runKey; delete marker.turnId;
         return [marker];

@@ -27,13 +27,13 @@ export interface TutorResponse {
   readable: boolean; confidence: 'low' | 'medium' | 'high';
 }
 export interface TutorRequest {
-  exerciseId: string; mode: 'chat' | 'hint' | 'check' | 'explain' | 'question';
+  id?: string; exerciseId: string; mode: 'chat' | 'hint' | 'check' | 'explain' | 'question';
   image?: string; pageIds?: string[]; message?: string; hintLevel?: number; language?: Language;
   history?: { role: 'user' | 'assistant'; content: string }[];
 }
 export interface Session {
   id: string; createdAt: string; exerciseId: string; mode: TutorRequest['mode'];
-  requestText: string; response: TutorResponse;
+  requestText: string; response: TutorResponse; requestHash?: string;
   snapshotId?: string; snapshotIds?: string[];
 }
 export interface LessonChatRequest {
@@ -60,14 +60,14 @@ export interface ReflectionRequest {
   exerciseId: string; confidence: number; notes: string; image?: string; pageIds?: string[];
 }
 export interface ReflectionResponse { progress: Progress; reflection: Reflection; }
-export interface StudyPlan {
+export interface ArchivedStudyPlan {
   title: string; summary: string; adjustment: string;
   weeks: { week: number; focus: string; moduleIds: string[];
     sessions: { title: string; moduleId: string; exerciseId: string; minutes: number }[] }[];
 }
 export interface AppState {
   profile: Profile; progress: Record<string, Progress>; sessions: Session[];
-  generatedExercises: Exercise[]; plan: StudyPlan | null;
+  generatedExercises: Exercise[]; plan: ArchivedStudyPlan | null;
   reflections: Reflection[]; dailyReviews: DailyReview[]; exercisePages: ExercisePage[]; lessonSessions: LessonSession[];
 }
 export interface Health { status: 'ok'; aiConfigured: boolean; model: string; }

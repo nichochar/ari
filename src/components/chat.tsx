@@ -10,13 +10,13 @@ function messageDate(value: string) {
 }
 
 /** Every conversation uses the same content-only bubble and quiet metadata row. */
-export function ChatMessage({ author, createdAt, children, details, arriving = false }: {
-  author: 'user' | 'assistant'; createdAt?: string; children: ReactNode; details?: ReactNode; arriving?: boolean;
+export function ChatMessage({ author, createdAt, children, details, arriving = false, busy = false }: {
+  author: 'user' | 'assistant'; createdAt?: string; children: ReactNode; details?: ReactNode; arriving?: boolean; busy?: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const name = author === 'assistant' ? 'Ari' : 'You';
   return <div className={`chat-message ${author}-message${arriving ? ' is-arriving' : ''}`} role="group"
-    aria-label={`Message from ${name}`} tabIndex={0} data-details-open={detailsOpen || undefined}
+    aria-label={`Message from ${name}`} aria-busy={busy || undefined} tabIndex={0} data-details-open={detailsOpen || undefined}
     onPointerUp={event => {
       // A tap reveals the same row on touch devices without intercepting links or photos.
       if (event.pointerType === 'touch' && !(event.target as HTMLElement).closest('a, button, input, textarea, summary'))

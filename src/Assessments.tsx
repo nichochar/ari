@@ -1,3 +1,4 @@
+import { Card } from './components/ui/card';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Camera, Expand, Pause, Play, Plus, RefreshCw, RotateCw, Upload, X } from 'lucide-react';
 import type { Curriculum, LearningLesson } from '../shared/learning';
@@ -103,11 +104,11 @@ export function Assessments({ curricula, lessons, initialCurriculumId }: {
 }
 
 function AssessmentHistoryItem({ item, curriculum, onOpen }: { item: AssessmentSummary; curriculum?: Curriculum; onOpen: () => void }) {
-  return <div className="assessment-history-item"><div><div className="assessment-history-meta">{curriculum?.title || 'Curriculum'} · {dateText(item.createdAt)}</div>
+  return <Card className="assessment-history-item"><div><div className="assessment-history-meta">{curriculum?.title || 'Curriculum'} · {dateText(item.createdAt)}</div>
     <h2>{item.title}</h2><p>{statusText[item.status]} · {item.minutes} min suggested{item.problemCount ? ` · ${item.problemCount} problems` : ''}
       {item.latestMaxScore !== null && ` · ${item.latestScore === null ? 'Not scored' : item.latestScore} / ${item.latestMaxScore}`}</p>
     {item.error && <p className="inline-error">{item.error}</p>}</div>
-    <Button variant="secondary" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></div>;
+    <Button variant="secondary" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></Card>;
 }
 
 function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
@@ -253,8 +254,12 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
       catch (failure) { changeWork({ submit: { ...pending, error: errorText(failure) } }, { field: 'submit', requestId: pending.body.id }); throw failure; }
     });
   }
-  const chatEnd = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (view?.messages.length || work.chat) chatEnd.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [view?.messages.length, work.chat]);
+  const chatLog = useRef<HTMLDivElement>(null);
+  const followChat = useRef(true);
+  useEffect(() => {
+    const log = chatLog.current;
+    if (log && followChat.current) log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' });
+  }, [view?.messages.length, work.chat]);
   const hasPaper = Boolean(view?.problems.length);
   const serverBusy = Boolean(view && working(view));
   const locked = !!busy || serverBusy;
@@ -291,7 +296,7 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
         <Button variant="secondary" loading={busy === 'retry'} disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Try again</Button></Alert>}
       {['planning', 'preparing'].includes(view.status) && <div className="assessment-progress"><ChatWaiting label={view.status === 'planning' ? 'Ari is suggesting topics' : 'Ari is preparing your paper'} />
         <p>{view.status === 'planning' ? 'Ari is suggesting a mix of topics…' : 'Ari is preparing your paper…'}</p></div>}
-      {view.status === 'proposed' && scope && <div className="assessment-proposal">
+      {view.status === 'proposed' && scope && <Card className="assessment-proposal">
         <h2>Your topic mix</h2><Markdown>{view.scopeReason}</Markdown>
         <div className="assessment-topics">{lessons.filter(lesson => lesson.curriculumId === view.curriculumId && lesson.status === 'ready').map(lesson => <label key={lesson.id}>
           <Checkbox disabled={locked} checked={scope.lessonIds.includes(lesson.id)} onCheckedChange={checked => setScope(current => current && ({ ...current, lessonIds: checked ? [...current.lessonIds, lesson.id] : current.lessonIds.filter(item => item !== lesson.id) }))} />
@@ -302,21 +307,22 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
           onChange={event => setScope(current => current && ({ ...current, instructions: event.target.value }))} /></label>
         <div className="assessment-actions"><Button loading={busy === 'prepare'} disabled={locked || !scope.lessonIds.length}
           onClick={() => void run('prepare', async () => { await mutate('', scope, 'PATCH'); await mutate('/prepare'); })}>Prepare paper</Button></div>
-      </div>}
+      </Card>}
       {view.status === 'paused' && <Alert>Your paper and work are saved. Resume when you are ready.</Alert>}
       {hasPaper && <div className="assessment-grid"><div className="assessment-main">
-        <article className="assessment-paper"><div className="assessment-paper-heading"><h2>Assessment paper</h2><span>{view.problems.reduce((sum, problem) => sum + problem.points, 0)} points</span></div>
+        <Card as="article" className="assessment-paper"><div className="assessment-paper-heading"><h2>Assessment paper</h2><span>{view.problems.reduce((sum, problem) => sum + problem.points, 0)} points</span></div>
           {view.problems.map((problem, index) => <section className="assessment-problem" key={problem.id}><div className="assessment-problem-heading"><h3>{index + 1}. {problem.title}</h3><span>{problem.points} points</span></div><Markdown>{problem.prompt}</Markdown></section>)}
-        </article>
-        {!!reviews.length && selectedReview?.review && <section className="assessment-review">
+        </Card>
+        {!!reviews.length && selectedReview?.review && <Card as="section" className="assessment-review">
           <div className="assessment-review-heading"><h2>Review</h2><Select compact aria-label="Review submission" value={selectedReview.id} onValueChange={setReviewId}
             options={reviews.map((submission, index) => ({ value: submission.id, label: `Submission ${index + 1} · ${dateText(submission.createdAt)}` }))} /></div>
           <Review review={selectedReview.review} view={view} />
           <details className="assessment-original"><summary>Submitted work</summary>{selectedReview.answer && <Markdown>{selectedReview.answer}</Markdown>}
             <div className="assessment-message-photos">{selectedReview.snapshotIds.map((snapshotId, index) => <Button key={snapshotId} variant="plain" onClick={() => setPhotoOpen({ source: photoSource(snapshotId), label: `Submitted page ${index + 1}` })}><img src={photoSource(snapshotId)} alt={`Submitted page ${index + 1}`} loading="lazy" /></Button>)}</div></details>
-        </section>}
-        <section className="conversation-panel assessment-chat"><div className="panel-heading"><h2>Talk with Ari</h2></div>
-          <div className="assessment-chat-messages" role="log" aria-label="Assessment conversation" aria-live="polite">
+        </Card>}
+        <Card as="section" className="conversation-panel assessment-chat"><div className="panel-heading"><h2>Talk with Ari</h2></div>
+          <div ref={chatLog} className="assessment-chat-messages" role="log" aria-label="Assessment conversation" aria-live="polite"
+            onScroll={event => { const log = event.currentTarget; followChat.current = log.scrollHeight - log.scrollTop - log.clientHeight < 100; }}>
             {!view.messages.length && !work.chat && <p className="assessment-muted">Ask about a problem or share your reasoning.</p>}
             {view.messages.filter(message => message.content || message.snapshotIds.length).map(message => <ChatMessage key={message.id} author={message.role} createdAt={message.createdAt}>
               {message.content && <Markdown>{message.content}</Markdown>}
@@ -328,14 +334,13 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
             {work.chat?.error && <Alert variant="destructive">{work.chat.error}<Button variant="secondary" disabled={locked} onClick={() => void deliverChat(work.chat!)}>Retry this message</Button></Alert>}
             {failedReply && !work.chat && <Alert variant="destructive">{failedReply.error || 'Ari could not answer. Your message and photos are saved.'}
               {canRetryReply && failedUser ? <Button variant="secondary" disabled={locked} onClick={() => void run('chat', () => mutate('/messages/' + encodeURIComponent(failedUser.id) + '/retry'))}>Retry reply</Button> : <span> Send a new message to continue.</span>}</Alert>}
-            <div ref={chatEnd} />
           </div>
           <ChatComposer value={draft} onChange={setDraft} onSend={() => void sendChat()} label="Assessment message" placeholder="Ask Ari about your work…" maxLength={4000}
             sendDisabled={!canChat || locked || !!work.chat || (!draft.trim() && !work.photo && !camera.active)}
             beforeInput={(camera.active || work.photo) && <p className="composer-attachment"><Camera size={14} />Current photo included</p>} />
-        </section>
+        </Card>
       </div><aside className="assessment-work">
-        <section className="camera-panel"><div className="panel-heading"><h2>Your work</h2><Button variant="icon" aria-label="Expand paper preview" onClick={() => setExpanded(true)}><Expand size={18} /></Button></div>
+        <Card as="section" className="camera-panel"><div className="panel-heading"><h2>Your work</h2><Button variant="icon" aria-label="Expand paper preview" onClick={() => setExpanded(true)}><Expand size={18} /></Button></div>
           <div className={'camera-stage ' + (camera.rotation % 180 ? 'portrait' : '')}><div className="camera-image-area">
             {work.photo ? <img className="uploaded-preview" src={work.photo.image} alt="Current uploaded work" /> : camera.active ? <div className={'video-frame ' + (camera.rotation % 180 ? 'sideways' : '')}>
               {camera.mode === 'native' ? camera.nativeFrameUrl ? <img ref={camera.nativeImageRef} src={camera.nativeFrameUrl} alt="Live IPEVO paper preview" style={cameraTransform} /> : <ChatWaiting label="Connecting camera" />
@@ -358,14 +363,14 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
             <span className="saved-page-remove-wrap"><Button variant="plain" className="saved-page-remove" aria-label={`Remove saved page ${index + 1}`} disabled={locked || !writable || !!work.chat || !!work.submit}
               onClick={() => void run('remove', async () => { apply(await assessmentApi<AssessmentView>('/' + id + '/pages/' + encodeURIComponent(page.id), {}, 'DELETE')); })}><X size={13} /></Button></span>
           </div>)}</div></div>}
-        </section>
-        <section className="assessment-submit"><label className="assessment-field">Typed work<Textarea value={answer || ''} onChange={event => setAnswer(event.target.value)} rows={5} maxLength={20000} disabled={!writable || locked} placeholder="Write your answers or add notes for your paper…" /></label>
+        </Card>
+        <Card as="section" className="assessment-submit"><label className="assessment-field">Typed work<Textarea value={answer || ''} onChange={event => setAnswer(event.target.value)} rows={5} maxLength={20000} disabled={!writable || locked} placeholder="Write your answers or add notes for your paper…" /></label>
           <Button disabled={!writable || locked || !!work.page} loading={busy === 'submit'} onClick={() => void submit()}>{busy === 'submit' ? 'Preparing submission…' : work.submit ? 'Retry this submission' : reviews.length ? 'Submit revised work' : 'Submit for review'}</Button>
           {view.status === 'grading' && <div className="assessment-grading"><ChatWaiting label="Ari is reviewing your submission" /><p>Ari is reviewing your work…</p></div>}
           {work.submit?.error && <Alert variant="destructive">{work.submit.error}{submitPendingSaved && ' Your submission was saved.'}</Alert>}
           {latestSubmission?.status === 'failed' && !work.submit && view.status !== 'failed' && <Alert variant="destructive">{latestSubmission.error || 'Review failed. Your work is saved.'}<Button variant="secondary" disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Retry review</Button></Alert>}
           {fallback && ((answer || '').trim() || view.pages.length > 0) && <Button variant="secondary" disabled={locked} onClick={() => void submit(true)}>Submit {view.pages.length ? 'saved pages' : 'typed work'}{view.pages.length && (answer || '').trim() ? ' and typed work' : ''} only</Button>}
-        </section>
+        </Card>
       </aside></div>}
     </>}
     <Dialog open={!!photoOpen} onOpenChange={open => { if (!open) setPhotoOpen(null); }}><DialogContent className="assessment-photo-dialog"><DialogTitle>{photoOpen?.label || 'Paper photo'}</DialogTitle><DialogDescription>Saved with this assessment.</DialogDescription>{photoOpen && <img src={photoOpen.source} alt={photoOpen.label} />}</DialogContent></Dialog>
@@ -377,7 +382,20 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
 
 function ExpandedCamera({ camera }: { camera: ReturnType<typeof useCamera> }) {
   const video = useRef<HTMLVideoElement>(null);
-  useEffect(() => { if (video.current) { video.current.srcObject = camera.videoRef.current?.srcObject || null; void video.current.play().catch(() => undefined); } }, [camera.videoRef]);
+  useEffect(() => {
+    const source = camera.videoRef.current;
+    const sync = () => {
+      const target = video.current;
+      const stream = camera.active && camera.mode === 'browser' ? source?.srcObject || null : null;
+      if (!target || target.srcObject === stream) return;
+      target.srcObject = stream;
+      if (stream) void target.play().catch(() => undefined);
+    };
+    sync();
+    const frame = requestAnimationFrame(sync);
+    source?.addEventListener('loadedmetadata', sync);
+    return () => { cancelAnimationFrame(frame); source?.removeEventListener('loadedmetadata', sync); };
+  }, [camera.active, camera.mode, camera.deviceId, camera.starting, camera.videoRef]);
   return <div className={'assessment-expanded-camera video-frame ' + (camera.rotation % 180 ? 'sideways' : '')}>{camera.mode === 'native'
     ? camera.nativeFrameUrl && <img src={camera.nativeFrameUrl} alt="Expanded live paper" style={{ transform: `translate(-50%, -50%) rotate(${camera.rotation}deg) scaleX(${camera.mirrored ? -1 : 1})` }} />
     : <video ref={video} autoPlay muted playsInline style={{ transform: `translate(-50%, -50%) rotate(${camera.rotation}deg) scaleX(${camera.mirrored ? -1 : 1})` }} />}</div>;

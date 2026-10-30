@@ -349,3 +349,126 @@ test('extensions continue phase numbering and deferred lessons retain their own 
     assert.equal((await fx.store().readLearning()).lessons.find(lesson => lesson.id === firstLessons[1].id)?.status, 'ready');
   } finally { await fx.close(); }
 });
+
+test('streaming sends message events without per-delta database writes and checkpoints survive failure', async () => {
+  let stream!: () => Promise<void>, finish!: () => void;
+  const provider = fixtureLearningProvider(async request => {
+    stream = async () => {
+      for (let i = 0; i < 3; i++) { await new Promise(resolve => setTimeout(resolve, 85)); await request.onText?.('A'); }
+    };
+    await request.onText?.('Beginning. ');
+    await new Promise<void>(resolve => { finish = resolve; });
+    await request.onCheckpoint?.(request.input, 40);
+    throw new LearningProviderError('CODEX_TIMEOUT', 'Timed out. Retry this message.');
+  });
+  const fx = await fixture(provider);
+  const updates: unknown[] = [];
+  fx.service().events.on('message', update => updates.push(update));
+  try {
+    await chat(fx, 'Explain this idea.');
+    for (let i = 0; i < 200 && !finish; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(finish);
+    const before = await fx.store().readLearning();
+    const writes = fx.store().updateLearning.bind(fx.store());
+    let mutations = 0;
+    fx.store().updateLearning = (...args) => { mutations++; return writes(...args); };
+    await stream();
+    assert.equal(mutations, 0);
+    assert.equal(before.messages.find(message => message.role === 'assistant')?.content, '');
+    assert.ok(updates.length >= 4);
+    const visible = await fx.service().view();
+    assert.equal(visible.messages.find(message => message.role === 'assistant')?.content, 'Beginning. ' + 'A'.repeat(3));
+    assert.equal(visible.messages.find(message => message.role === 'assistant')?.status, 'streaming');
+    finish(); await fx.settle();
+    const saved = await fx.store().readLearning();
+    assert.equal(saved.messages.find(message => message.role === 'assistant')?.content, 'Beginning. ' + 'A'.repeat(3));
+    assert.equal(saved.messages.find(message => message.role === 'assistant')?.status, 'failed');
+    assert.ok(saved.runs[0].context);
+    await fx.restart();
+    assert.equal((await fx.service().view()).messages.find(message => message.role === 'assistant')?.status, 'failed');
+  } finally { finish?.(); await fx.close(); }
+});
+
+test('learning event stream forwards incremental messages and removes listeners on disconnect', async () => {
+  const fx = await fixture();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const response = await fx.request('/api/learning/events');
+    assert.match(response.headers.get('content-type')!, /text\/event-stream/);
+    reader = response.body!.getReader();
+    assert.match(new TextDecoder().decode((await reader.read()).value), /event: change/);
+    const update = { id: randomUUID(), content: 'A streamed answer.', status: 'streaming' };
+    fx.service().events.emit('message', update);
+    assert.match(new TextDecoder().decode((await reader.read()).value), /event: message/);
+    await reader.cancel(); reader = undefined;
+    for (let i = 0; i < 100 && fx.service().events.listenerCount('message'); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(fx.service().events.listenerCount('message'), 0);
+    assert.equal(fx.service().events.listenerCount('change'), 0);
+  } finally { await reader?.cancel(); await fx.close(); }
+});
+
+test('revisiting setup while a reply runs preserves the new greeting in model context', async () => {
+  let finish!: () => void;
+  const fx = await fixture(fixtureLearningProvider(async request => {
+    await new Promise<void>(resolve => { finish = resolve; });
+    return { text: 'A useful reply.', output: [], context: [...request.input, { role: 'assistant', content: 'A useful reply.' }], inputTokens: 40 };
+  }));
+  try {
+    await chat(fx, 'A question before revisiting setup.');
+    for (let i = 0; i < 200 && !finish; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(finish);
+    await fx.service().beginOnboarding();
+    const greeting = (await fx.store().readLearning()).context.at(-1);
+    finish(); await fx.settle();
+    const context = (await fx.store().readLearning()).context;
+    assert.deepEqual(context.at(-1), greeting);
+    assert.ok(context.some(item => (item as {content?: string}).content === 'A useful reply.'));
+  } finally { finish?.(); await fx.close(); }
+});
+
+for (const streamed of [true, false]) test(`oversized ${streamed ? 'streamed' : 'completed'} replies preserve a bounded partial transcript and a durable failure`, async () => {
+  const content = 'A'.repeat(100001);
+  const fx = await fixture(fixtureLearningProvider(async request => {
+    if (streamed) { await request.onText?.(content.slice(0, 90000)); await request.onText?.(content.slice(90000)); }
+    return { text: content, output: [{ role: 'assistant', content }], inputTokens: 40 };
+  }));
+  try {
+    await chat(fx, 'A synthetic long response.'); await fx.settle();
+    const data = await fx.store().readLearning();
+    assert.equal(data.runs[0].status, 'failed');
+    assert.match(data.runs[0].error!, /saved message limit/);
+    const assistant = data.messages.find(message => message.role === 'assistant')!;
+    assert.equal(assistant.status, 'failed');
+    assert.equal(assistant.content, content.slice(0, 100000));
+    await fx.restart();
+    assert.equal((await fx.store().readLearning()).runs[0].status, 'failed');
+  } finally { await fx.close(); }
+});
+
+test('revisiting setup during compaction preserves both the native artifact and appended greeting', async () => {
+  const original = process.env.LEARNING_COMPACTION_TOKENS;
+  process.env.LEARNING_COMPACTION_TOKENS = '1';
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const artifact = { type: 'ari_codex_context', version: 1, threadId: 'synthetic-thread', state: 'complete', inputTokens: 40, tools: [], messages: [] };
+  const provider = fixtureLearningProvider();
+  const fx = await fixture({ ...provider, compact: async () => { entered(); await gate; return [artifact]; } });
+  try {
+    await chat(fx, 'First question.'); await fx.settle();
+    await chat(fx, 'Second question.'); await started;
+    await fx.service().beginOnboarding();
+    const greeting = (await fx.store().readLearning()).context.at(-1);
+    release(); await fx.settle();
+    const context = (await fx.store().readLearning()).context;
+    assert.deepEqual(context[0], artifact);
+    assert.deepEqual(context[1], greeting);
+    assert.equal(context.filter(item => JSON.stringify(item) === JSON.stringify(greeting)).length, 1);
+    assert.ok(context.some(item => (item as { content?: string }).content === 'Second question.'));
+  } finally {
+    release();
+    if (original === undefined) delete process.env.LEARNING_COMPACTION_TOKENS; else process.env.LEARNING_COMPACTION_TOKENS = original;
+    await fx.close();
+  }
+});

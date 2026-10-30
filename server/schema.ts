@@ -31,7 +31,7 @@ export const tutorResponseSchema = z.object({
 }).strict();
 const sessionSchema = z.object({
   id: bounded(120), createdAt: z.iso.datetime(), exerciseId: bounded(120), mode: z.enum(['chat', 'hint', 'check', 'explain', 'question']),
-  requestText: bounded(4000), response: tutorResponseSchema, snapshotId: bounded(120).optional(),
+  requestText: bounded(4000), response: tutorResponseSchema, requestHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), snapshotId: bounded(120).optional(),
   snapshotIds: z.array(bounded(120).min(1)).max(21).optional(),
 }).strict();
 export const lessonSessionSchema = z.object({
@@ -59,13 +59,13 @@ export const reviewOutputSchema = dailyReviewSchema.omit({
   id: true, date: true, timeZone: true, createdAt: true, evidenceFingerprint: true,
   evidenceSessionIds: true, evidenceReflectionIds: true, evidenceLessonSessionIds: true,
 });
-const planSessionSchema = z.object({ title: bounded(200), moduleId: bounded(120), exerciseId: bounded(120), minutes: z.number().int().min(1).max(180) }).strict();
-export const planSchema = z.object({ title: bounded(200), summary: bounded(3000), adjustment: bounded(3000),
-  weeks: z.array(z.object({ week: z.number().int().min(1).max(52), focus: bounded(500), moduleIds: z.array(bounded(120)).max(20), sessions: z.array(planSessionSchema).max(14) }).strict()).min(1).max(8),
+const archivedPlanSessionSchema = z.object({ title: bounded(200), moduleId: bounded(120), exerciseId: bounded(120), minutes: z.number().int().min(1).max(180) }).strict();
+const archivedPlanSchema = z.object({ title: bounded(200), summary: bounded(3000), adjustment: bounded(3000),
+  weeks: z.array(z.object({ week: z.number().int().min(1).max(52), focus: bounded(500), moduleIds: z.array(bounded(120)).max(20), sessions: z.array(archivedPlanSessionSchema).max(14) }).strict()).min(1).max(8),
 }).strict();
 export const stateSchema = z.object({
   profile: profileSchema, progress: z.record(z.string(), progressSchema), sessions: z.array(sessionSchema).max(10000),
-  generatedExercises: z.array(exerciseSchema).max(5000), plan: planSchema.nullable(),
+  generatedExercises: z.array(exerciseSchema).max(5000), plan: archivedPlanSchema.nullable(),
   reflections: z.array(reflectionSchema).max(10000).default([]), dailyReviews: z.array(dailyReviewSchema).max(10000).default([]),
   exercisePages: z.array(exercisePageSchema).max(100000).default([]),
   lessonSessions: z.array(lessonSessionSchema).max(10000).default([]),
@@ -74,7 +74,7 @@ export const stateSchema = z.object({
 export const profilePatchSchema = profileSchema.partial().strict();
 export const progressPatchSchema = progressSchema.partial().strict();
 export const tutorRequestSchema = z.object({
-  exerciseId: bounded(120).min(1), mode: z.enum(['chat', 'hint', 'check', 'explain', 'question']),
+  id: z.uuid().optional(), exerciseId: bounded(120).min(1), mode: z.enum(['chat', 'hint', 'check', 'explain', 'question']),
   image: z.string().max(7_000_000).optional(), message: bounded(4000).optional(),
   pageIds: z.array(bounded(120).min(1)).max(20).optional(),
   hintLevel: z.number().int().min(1).max(3).optional(), language: z.enum(['en', 'fr']).optional(),

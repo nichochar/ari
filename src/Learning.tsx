@@ -1,3 +1,4 @@
+import { Card } from './components/ui/card';
 import { appStorage } from './storage';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Check, FileText, Paperclip, Plus, RefreshCw, X } from 'lucide-react';
@@ -35,7 +36,7 @@ export function ProposalCard({ proposal, refresh, discuss, openCurriculum }: {
     try { await learningApi('/proposals/' + encodeURIComponent(proposal.id) + '/' + action, { revision: proposal.revision }); await refresh(); }
     catch (failure) { setError(learningError(failure)); } finally { setBusy(false); }
   }
-  return <article className="proposal-card">
+  return <Card as="article" className="proposal-card">
     <span className="eyebrow">{proposal.status === 'proposed' ? 'PROPOSED OUTLINE' : proposal.status.toUpperCase()} · {proposal.lessons.length === 1 ? 'ONE LESSON' : proposal.lessons.length + ' LESSONS'}</span>
     <h3>{proposal.title}</h3><p>{proposal.description}</p>
     <div className="proposal-meta"><span>{proposal.topic}</span><span>Starting level: {proposal.level}</span></div>
@@ -48,7 +49,7 @@ export function ProposalCard({ proposal, refresh, discuss, openCurriculum }: {
       <Button variant="ghost" disabled={busy} onClick={() => void decide('dismiss')}>Dismiss</Button>
     </div> : proposal.curriculumId && proposal.status === 'accepted' ? <Button variant="ghost" onClick={() => openCurriculum(proposal.curriculumId!)}>Open curriculum <ArrowRight size={14} /></Button> : null}
     {error && <p className="inline-error" role="alert">{error}</p>}
-  </article>;
+  </Card>;
 }
 
 export function MainConversation({ data, pending, deliver, refresh, focusId, setFocusId, openCurriculum, starter, clearStarter }: {
@@ -91,12 +92,12 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
       !onboarding && <div className="focus-select"><label htmlFor="conversation-focus">Conversation focus</label><Select id="conversation-focus" value={focusId} onValueChange={setFocusId} options={[{ value: '', label: 'Any subject' }, ...data.curricula.map(item => ({ value: item.id, label: item.title }))]} /></div>
     } />
     {onboarding && <OnboardingConversation data={data.personalization} refresh={refresh} discuss={discuss} hasAnswer={data.messages.some(message => message.role === 'user')} disabled={busy || pending.length > 0} />}
-    <div className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
+    <Card className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="secondary" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
         {data.messages.filter(message => !message.proactive || message.deliveredAt).map(message => <div className={'main-message ' + (message.role === 'user' ? 'outgoing-exchange' : '')} key={message.id}>
-          {message.content ? <ChatMessage author={message.role} createdAt={message.createdAt}
+          {message.content ? <ChatMessage author={message.role} createdAt={message.createdAt} busy={message.status === 'streaming' || message.status === 'pending'}
             details={(!!message.materialIds?.length || (message.role === 'assistant' && data.events.some(event => event.runId === message.runId && event.type === 'tool_call'))) ? <>
               {!!message.materialIds?.length && <div className="message-materials"><Paperclip size={12} />{message.materialIds.map(id => data.materials.find(item => item.id === id)?.title || 'Material').join(', ')}</div>}
               {message.role === 'assistant' && <ToolActivity data={data} runId={message.runId} running={message.status === 'pending' || message.status === 'streaming'} />}
@@ -119,7 +120,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
         {showMaterials && <div id="main-material-picker" className="material-picker"><p>Select material for this message.</p>{data.materials.length ? data.materials.map(item => <label key={item.id}><Checkbox checked={attached.includes(item.id)} onCheckedChange={checked => setAttached(current => checked ? [...current, item.id] : current.filter(id => id !== item.id))} />{item.title} <small>{item.kind}</small></label>) : <p>No materials yet. Add a note, link or PDF below.</p>}</div>}
         {!data.provider.configured && <p className="provider-note">The main tutor is not configured. Your existing lessons and practice remain available.</p>}
       </ChatComposer>
-    </div>
+    </Card>
     {!onboarding && <Materials data={data} refresh={refresh} />}
   </div>;
 }
@@ -136,11 +137,11 @@ function Materials({ data, refresh }: { data: LearningView; refresh: () => Promi
       await refresh(); setTitle(''); setText(''); setUrl(''); setFile(null); setOpen(false); setMessage('Material saved. Select it with Materials when sending a message.');
     } catch (failure) { setMessage(learningError(failure)); } finally { setBusy(false); }
   }
-  return <section className="learning-materials"><div className="card-heading"><h3><BookOpen size={16} /> Your materials <small>{data.materials.length || ''}</small></h3><Button variant="ghost" aria-expanded={open} aria-controls="material-form" onClick={() => setOpen(value => !value)}><Plus size={14} /> Add material</Button></div>
+  return <Card as="section" className="learning-materials"><div className="card-heading"><h3><BookOpen size={16} /> Your materials <small>{data.materials.length || ''}</small></h3><Button variant="ghost" aria-expanded={open} aria-controls="material-form" onClick={() => setOpen(value => !value)}><Plus size={14} /> Add material</Button></div>
     {!!data.materials.length && <div className="material-list">{data.materials.map(item => <div key={item.id}><FileText size={14} /><span>{<a href={item.url || '/api/learning/materials/' + encodeURIComponent(item.id) + '/source'} target="_blank" rel="noopener noreferrer" title={item.kind === 'pdf' ? 'Open saved PDF' : item.kind === 'note' ? 'Read saved note' : 'Open source'}>{item.title}</a>}</span><small>{item.kind} · saved</small></div>)}</div>}
     {open && <div id="material-form" className="material-form"><div className="form-field"><label htmlFor="material-type">Material type</label><Select id="material-type" value={kind} onValueChange={value => { setKind(value as typeof kind); setMessage(''); }} options={[{ value: 'note', label: 'Note' }, { value: 'link', label: 'Web link' }, { value: 'pdf', label: 'PDF' }]} /></div><label>Title<Input value={title} onChange={event => setTitle(event.target.value)} placeholder="A name you will recognise" maxLength={200} /></label>
       {kind === 'note' ? <label>Your notes<Textarea rows={4} value={text} onChange={event => setText(event.target.value)} maxLength={100000} /></label> : kind === 'link' ? <label>Public web address<Input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" /></label> : <div className="form-field"><span>PDF file</span><FileUpload label="Choose PDF" accept="application/pdf,.pdf" onFile={setFile} filename={file?.name} disabled={busy} /></div>}
       <Button variant="secondary" loading={busy} disabled={busy || (kind === 'note' ? !text.trim() : kind === 'link' ? !url.trim() : !file)} onClick={() => void save()}>{busy ? 'Reading and saving…' : 'Save material'}</Button>
     </div>}{message && <p className="status-line" role="status">{message}</p>}
-  </section>;
+  </Card>;
 }

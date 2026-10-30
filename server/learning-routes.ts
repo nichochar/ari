@@ -52,11 +52,17 @@ export function learningRoutes(service: LearningService) {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
     const changed = () => { if (!res.destroyed) res.write('event: change\ndata: {}\n\n'); };
+    const message = (update: unknown) => {
+      if (res.destroyed) return;
+      if (res.writableLength > 1024 * 1024) { res.destroy(); return; }
+      res.write(`event: message\ndata: ${JSON.stringify(update)}\n\n`);
+    };
     changed(); service.events.on('change', changed);
+    service.events.on('message', message);
     // This is connection maintenance only; it does not run learner check-ins.
     const keepalive = setInterval(() => { if (!res.destroyed) res.write(': keepalive\n\n'); }, 25000);
     keepalive.unref();
-    req.on('close', () => { clearInterval(keepalive); service.events.off('change', changed); });
+    req.on('close', () => { clearInterval(keepalive); service.events.off('change', changed); service.events.off('message', message); });
   });
   router.post('/chat', async (req, res) => res.status(202).json(await service.chat(mainChatRequestSchema.parse(req.body))));
   router.post('/proposals/:id/accept', async (req, res) => res.status(202).json(await service.accept(String(req.params.id), revisionSchema.parse(req.body).revision)));

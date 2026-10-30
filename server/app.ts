@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { ZodError, z } from 'zod';
 import { modules, exercises } from '../shared/curriculum.js';
-import { MAX_EXERCISE_PAGES, type AppState, type DailyReview, type Exercise, type LessonSession, type Module, type Progress, type StudyPlan, type TutorRequest, type TutorResponse } from '../shared/types.js';
-import { createAIAsk, generateInstructions, lessonInstructions, normalizeGeneratedMath, planInstructions, reviewInstructions, tutorInstructions, verifyInstructions, type AIAsk } from './ai.js';
-import { dailyReviewRequestSchema, exerciseSchema, generateRequestSchema, lessonChatRequestSchema, pageRequestSchema, planSchema, profilePatchSchema, progressPatchSchema, reflectionRequestSchema, reviewOutputSchema, tutorRequestSchema, tutorResponseSchema, validateImage } from './schema.js';
+import { MAX_EXERCISE_PAGES, type AppState, type DailyReview, type Exercise, type LessonSession, type Module, type Progress, type Session, type TutorRequest, type TutorResponse } from '../shared/types.js';
+import { generateInstructions, lessonInstructions, normalizeGeneratedMath, reviewInstructions, tutorInstructions, verifyInstructions, type AIAsk } from './ai.js';
+import { dailyReviewRequestSchema, exerciseSchema, generateRequestSchema, lessonChatRequestSchema, pageRequestSchema, profilePatchSchema, progressPatchSchema, reflectionRequestSchema, reviewOutputSchema, tutorRequestSchema, tutorResponseSchema, validateImage } from './schema.js';
 import { StateStore } from './state.js';
 import { cameraBridge } from './camera.js';
 import { LearningService } from './learning-service.js';
@@ -32,11 +32,11 @@ const body = <T>(schema: z.ZodType<T>, value: unknown): T => {
   return parsed.data;
 };
 const findExercise = (state: AppState, id: string) => curatedMap.get(id) ?? state.generatedExercises.find(exercise => exercise.id === id);
-const allExercises = (state: AppState) => [...curatedExercises, ...state.generatedExercises];
 const defaultProgress = (exerciseId: string): Progress => ({ exerciseId, status: 'started', confidence: 0,
   updatedAt: new Date().toISOString(), hintCount: 0, lastScore: null, nextReviewAt: null });
 const failAI = (error: unknown): never => {
   if (error instanceof LearningProviderError) {
+    if (error.code === 'CODEX_INPUT_TOO_LARGE') throw new HttpError(400, error.message);
     if (error.code === 'CODEX_LIMIT') throw new HttpError(503, 'Codex usage limit reached. Try again when it resets or configure OpenAI API credits.');
     if (error.code === 'CODEX_RATE_LIMIT' || error.code === 'API_RATE_LIMIT' || error.code === 'CODEX_BUSY') throw new HttpError(429, 'The tutor is temporarily rate limited or busy. Try again shortly.');
     if (error.code === 'CODEX_TIMEOUT' || error.code === 'API_TIMEOUT') throw new HttpError(504, 'The tutor timed out. Try again.');
@@ -62,61 +62,6 @@ const failAI = (error: unknown): never => {
   throw new HttpError(502, 'The AI service could not complete this request. Try again.');
 };
 const safeAI = async (ai: AIAsk, ...args: Parameters<AIAsk>) => { try { return await ai(...args); } catch (error) { return failAI(error); } };
-
-function fallbackPlan(state: AppState, reason: string): StudyPlan {
-  const done = new Set(Object.values(state.progress).filter(p => p.status === 'completed').map(p => p.exerciseId));
-  const catalog = allExercises(state);
-  const latestReview = recentReviews(state).at(-1);
-  const recommended = new Set(latestReview?.recommendedModuleIds ?? []);
-  const completedModules = new Set(curriculumModules.filter(m => m.exerciseIds.every(id => done.has(id))).map(m => m.id));
-  const included = new Set<string>();
-  const scheduled = new Set<string>();
-  const weeks: StudyPlan['weeks'] = [];
-  let lastSubject = '';
-  for (let week = 1; week <= 4; week++) {
-    const sessions: StudyPlan['weeks'][number]['sessions'] = [];
-    for (let slot = 0; slot < state.profile.sessionsPerWeek; slot++) {
-      let candidates = curriculumModules.filter(m => m.prerequisites.every(id => completedModules.has(id) || included.has(id)));
-      if (!candidates.length) candidates = curriculumModules;
-      const module = candidates.map(m => ({ m, remaining: catalog.filter(e => e.moduleId === m.id && !done.has(e.id) && !scheduled.has(e.id)) }))
-        .filter(x => x.remaining.length)
-        .sort((a, b) => Number(!recommended.has(a.m.id)) - Number(!recommended.has(b.m.id)) ||
-          a.m.phase - b.m.phase || Number(a.m.subject === lastSubject) - Number(b.m.subject === lastSubject))[0];
-      if (!module) break;
-      const exercise = latestReview?.pace === 'accelerate' && recommended.has(module.m.id)
-        ? module.remaining.find(item => item.difficulty === 'stretch') ?? module.remaining[0] : module.remaining[0];
-      included.add(module.m.id); scheduled.add(exercise.id); lastSubject = module.m.subject;
-      sessions.push({ title: exercise.title, moduleId: module.m.id, exerciseId: exercise.id, minutes: state.profile.sessionMinutes });
-    }
-    if (!sessions.length) break;
-    const moduleIds = [...new Set(sessions.map(s => s.moduleId))];
-    weeks.push({ week, focus: moduleIds.map(id => moduleMap.get(id)?.title ?? id).join(' + '), moduleIds, sessions });
-  }
-  if (!weeks.length) {
-    const first = catalog[0];
-    if (first) weeks.push({ week: 1, focus: moduleMap.get(first.moduleId)?.title ?? 'Review', moduleIds: [first.moduleId], sessions: [{ title: first.title, moduleId: first.moduleId, exerciseId: first.id, minutes: state.profile.sessionMinutes }] });
-  }
-  return { title: 'Four-week study plan (local)', summary: `A manageable path through mathematics and physics at ${state.profile.sessionsPerWeek} sessions per week.`,
-    adjustment: latestReview ? `${reason} Today's review informed the module order and difficulty.` : reason, weeks };
-}
-
-function validatePlan(value: unknown, state: AppState): StudyPlan | null {
-  const parsed = planSchema.safeParse(value);
-  if (!parsed.success || parsed.data.weeks.length !== 4) return null;
-  const catalog = new Map(allExercises(state).map(e => [e.id, e]));
-  const completedModules = new Set(curriculumModules.filter(m => m.exerciseIds.every(id => state.progress[id]?.status === 'completed')).map(m => m.id));
-  const planned = new Set<string>();
-  for (const [index, week] of parsed.data.weeks.entries()) {
-    if (week.week !== index + 1 || !week.sessions.length || week.sessions.length > state.profile.sessionsPerWeek) return null;
-    for (const session of week.sessions) {
-      const module = moduleMap.get(session.moduleId);
-      if (!module || !week.moduleIds.includes(module.id) || catalog.get(session.exerciseId)?.moduleId !== module.id || session.minutes > state.profile.sessionMinutes) return null;
-      if (!module.prerequisites.every(id => completedModules.has(id) || planned.has(id))) return null;
-      planned.add(module.id);
-    }
-  }
-  return parsed.data;
-}
 
 function normalizeTutor(value: unknown, mode: TutorRequest['mode'], exercise: Exercise, hasWork: boolean, language: 'en' | 'fr'): TutorResponse {
   const rawSchema = tutorResponseSchema.extend({ workRelevant: z.boolean(), workLegible: z.boolean(), assessmentRequested: z.boolean().optional() });
@@ -158,10 +103,6 @@ function lessonHistory(state: AppState, moduleId: string) {
     { role: 'user' as const, content: session.requestText },
     { role: 'assistant' as const, content: [session.response.feedback, session.response.nextStep, session.response.question].filter(Boolean).join('\n').slice(0, 2000) },
   ]);
-}
-
-function recentReviews(state: AppState): DailyReview[] {
-  return [...state.dailyReviews].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt)).slice(-7);
 }
 
 function storedHistory(state: AppState, exerciseId: string) {
@@ -249,22 +190,24 @@ export function createApp(options: AppOptions = {}) {
     return { ...state, generatedExercises: [...state.generatedExercises, ...data.exercises.filter(e => !existing.has(e.id) && data.lessons.some(l => l.id === e.moduleId && l.status === 'ready'))] };
   };
   const findModule = async (id: string) => (await store.readLearning()).lessons.find(l => l.id === id && l.status === 'ready') ?? moduleMap.get(id);
-  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(options.ai ?? createAIAsk(), options.personalizationProvider, workspace, () => learning.personalizationChanged());
+  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(options.ai, options.personalizationProvider, workspace, () => learning.personalizationChanged());
   const aiConfigured = options.aiConfigured ?? Boolean(ai);
   const model = options.model ?? process.env.OPENAI_MODEL ?? 'gpt-5.4';
   const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
   const reviewQueue = new Map<string, Promise<DailyReview>>();
+  const tutorQueue = new Map<string, { requestHash: string; task: Promise<Session> }>();
   const lessonQueue = new Map<string, { moduleId: string; message: string; language: 'en' | 'fr'; task: Promise<LessonSession> }>();
   const moduleLessonQueue = new Map<string, Promise<LessonSession>>();
   app.disable('x-powered-by');
   app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     const host = req.headers.host ?? '';
     const hostname = host.replace(/:\d+$/, '').toLowerCase();
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(hostname)) return res.status(403).json({ error: 'Loopback access only.' });
     const origin = req.headers.origin;
     if (origin) {
       let allowed = false;
-      try { const parsed = new URL(origin); allowed = parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname) && ['3001', '3002', '5173', '5174', '5175'].includes(parsed.port); } catch { /* invalid origin */ }
+      try { const parsed = new URL(origin); allowed = parsed.protocol === 'http:' && !parsed.username && !parsed.password && ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname) && (parsed.host.toLowerCase() === host.toLowerCase() || ['3001', '3002', '5173', '5174', '5175'].includes(parsed.port)); } catch { /* invalid origin */ }
       if (!allowed) return res.status(403).json({ error: 'Origin not allowed.' });
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
@@ -402,27 +345,55 @@ export function createApp(options: AppOptions = {}) {
     if (input.mode === 'check' && input.image === undefined && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Provide a photo or typed work to check.');
     if (input.mode === 'question' && !input.message?.trim()) throw new HttpError(400, 'Write a question for the tutor.');
     if (input.mode === 'chat' && input.image === undefined && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Write a message or share a photo with the tutor.');
-    const state = await catalogState();
-    const exercise = findExercise(state, input.exerciseId);
-    if (!exercise) throw new HttpError(404, 'Exercise not found.');
-    const submitted = submittedImages(store, state, exercise.id, input.pageIds, input.image);
-    if (!ai) throw new HttpError(503, 'AI tutoring is unavailable. Configure a provider to request feedback.');
-    const payload = { exercise, mode: input.mode, hintLevel: input.hintLevel ?? Math.min(3, (state.progress[exercise.id]?.hintCount ?? 0) + 1),
-      language: input.language ?? state.profile.language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
-      imageOrder: submitted.imageOrder };
-    const raw = await safeAI(ai, 'tutor', tutorInstructions(input.mode), payload,
-      submitted.images.length > 1 ? submitted.images : submitted.images[0]);
-    const response = normalizeTutor(raw, input.mode, exercise, Boolean(submitted.images.length || input.message?.trim()), payload.language);
-    await store.update(draft => {
-      const previous = draft.progress[exercise.id];
-      draft.progress[exercise.id] = { ...defaultProgress(exercise.id), ...previous, updatedAt: new Date().toISOString(),
-        hintCount: (previous?.hintCount ?? 0) + (input.mode === 'hint' ? 1 : 0),
-        lastScore: response.score ?? previous?.lastScore ?? null };
-      const snapshotIds = [...submitted.snapshotIds, ...(input.image !== undefined ? [store.saveSnapshot(input.image)] : [])];
-      draft.sessions.push({ id: randomUUID(), createdAt: new Date().toISOString(), exerciseId: exercise.id, mode: input.mode,
-        requestText: input.message ?? '', response, ...(snapshotIds.length ? { snapshotId: snapshotIds.at(-1), snapshotIds } : {}) });
-    });
-    res.json(response);
+    const id = input.id ?? randomUUID();
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      exerciseId: input.exerciseId, mode: input.mode, message: input.message ?? '',
+      image: input.image ?? null, pageIds: input.pageIds ?? [],
+      hintLevel: input.hintLevel ?? null, language: input.language ?? null,
+    })).digest('hex');
+    const conflict = () => new HttpError(409, 'This message ID already belongs to a different tutor request.');
+    const pending = tutorQueue.get(id);
+    if (pending) {
+      if (pending.requestHash !== requestHash) throw conflict();
+      return res.json(await pending.task);
+    }
+    const task = (async (): Promise<Session> => {
+      const saved = (await store.read()).sessions.find(session => session.id === id);
+      if (saved) {
+        if (saved.requestHash !== requestHash) throw conflict();
+        return saved;
+      }
+      const state = await catalogState();
+      const exercise = findExercise(state, input.exerciseId);
+      if (!exercise) throw new HttpError(404, 'Exercise not found.');
+      const submitted = submittedImages(store, state, exercise.id, input.pageIds, input.image);
+      if (!ai) throw new HttpError(503, 'AI tutoring is unavailable. Configure a provider to request feedback.');
+      const payload = { exercise, mode: input.mode, hintLevel: input.hintLevel ?? Math.min(3, (state.progress[exercise.id]?.hintCount ?? 0) + 1),
+        language: input.language ?? state.profile.language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
+        imageOrder: submitted.imageOrder };
+      const raw = await safeAI(ai, 'tutor', tutorInstructions(input.mode), payload,
+        submitted.images.length > 1 ? submitted.images : submitted.images[0]);
+      const response = normalizeTutor(raw, input.mode, exercise, Boolean(submitted.images.length || input.message?.trim()), payload.language);
+      return store.update(draft => {
+        const existing = draft.sessions.find(session => session.id === id);
+        if (existing) {
+          if (existing.requestHash !== requestHash) throw conflict();
+          return existing;
+        }
+        const previous = draft.progress[exercise.id];
+        draft.progress[exercise.id] = { ...defaultProgress(exercise.id), ...previous, updatedAt: new Date().toISOString(),
+          hintCount: (previous?.hintCount ?? 0) + (input.mode === 'hint' ? 1 : 0),
+          lastScore: response.score ?? previous?.lastScore ?? null };
+        const snapshotIds = [...submitted.snapshotIds, ...(input.image !== undefined ? [store.saveSnapshot(input.image)] : [])];
+        const session: Session = { id, requestHash, createdAt: new Date().toISOString(), exerciseId: exercise.id, mode: input.mode,
+          requestText: input.message ?? '', response, ...(snapshotIds.length ? { snapshotId: snapshotIds.at(-1), snapshotIds } : {}) };
+        draft.sessions.push(session);
+        return session;
+      });
+    })();
+    tutorQueue.set(id, { requestHash, task });
+    try { res.json(await task); }
+    finally { if (tutorQueue.get(id)?.task === task) tutorQueue.delete(id); }
   });
   app.post('/api/reflections', async (req, res) => {
     const input = body(reflectionRequestSchema, req.body);
@@ -516,25 +487,6 @@ export function createApp(options: AppOptions = {}) {
     if (!verdict.success || !verdict.data.valid) throw new HttpError(502, 'The generated exercise could not be verified. Try again.');
     await store.update(state => { state.generatedExercises.push(exercise); });
     res.status(201).json(exercise);
-  });
-  app.post('/api/plan', async (req, res) => {
-    body(z.object({}).strict(), req.body);
-    const state = await store.read();
-    let plan: StudyPlan | null = null;
-    if (ai) {
-      try {
-        const catalog = allExercises(state).map(e => ({ id: e.id, moduleId: e.moduleId, title: e.title, difficulty: e.difficulty, minutes: e.minutes }));
-        const completedModuleIds = curriculumModules.filter(module =>
-          module.exerciseIds.every(id => state.progress[id]?.status === 'completed')).map(module => module.id);
-        const raw = await ai('plan', planInstructions, { profile: profileDefaults(state.profile), progress: state.progress,
-          completedModuleIds, candidateSchedule: fallbackPlan(state, '').weeks,
-          modules: curriculumModules, exercises: catalog });
-        plan = validatePlan(raw, state);
-      } catch { /* local plan remains available */ }
-    }
-    plan ??= fallbackPlan(state, ai ? 'Prepared locally because AI planning did not return a usable plan.' : 'Prepared locally because AI planning is unavailable.');
-    await store.update(draft => { draft.plan = plan; });
-    res.json(plan);
   });
   app.get('/api/export', async (_req, res) => {
     const state = await store.read();

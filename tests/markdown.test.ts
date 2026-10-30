@@ -25,12 +25,21 @@ test('saved-note references render accessible dialog controls while web links re
   assert.match(html, /<button[^>]+class="[^"]*workspace-document-link/);
   assert.match(html, /aria-haspopup="dialog"/);
   assert.doesNotMatch(html, /href="memories\//);
-  assert.match(html, /<a href="https:\/\/example.com\/notes">website<\/a>/);
+  assert.match(html, /<a href="https:\/\/example.com\/notes" target="_blank" rel="noopener noreferrer">website<\/a>/);
   // Rendering a note does not recursively create note dialogs or dead local links.
   const readOnly = renderToStaticMarkup(createElement(Markdown, { children: '[another note](USER.md) and [web](https://example.com)', workspaceLinks: false }));
   assert.match(readOnly, /<span title="USER.md">another note<\/span>/);
   assert.doesNotMatch(readOnly, /workspace-document-link|href="USER.md"/);
-  assert.match(readOnly, /<a href="https:\/\/example.com">web<\/a>/);
+  assert.match(readOnly, /<a href="https:\/\/example.com" target="_blank" rel="noopener noreferrer">web<\/a>/);
+});
+
+test('web links open safely without changing email, fragment, or application navigation', () => {
+  const html = render('[http](http://example.com) [relative web](//example.com/page) [email](mailto:ari@example.com) [section](#example) [app](/settings)');
+  assert.match(html, /href="http:\/\/example.com" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /href="\/\/example.com\/page" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /<a href="mailto:ari@example.com">email<\/a>/);
+  assert.match(html, /<a href="#example">section<\/a>/);
+  assert.match(html, /<a href="\/settings">app<\/a>/);
 });
 
 test('standard LaTeX inline and same-line display delimiters render through KaTeX', () => {

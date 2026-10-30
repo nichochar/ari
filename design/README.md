@@ -79,7 +79,27 @@ The sun is the only brand colour, and it is never used for errors, links or butt
 | Logo | Marcellus | Outlines in the logo only |
 | Mathematics | KaTeX | Rendered by `rehype-katex` |
 
-DM Sans and Newsreader are loaded from Google Fonts in `src/styles.css`.
+DM Sans and Newsreader are self-hosted in `public/fonts/` and loaded through `src/fonts.css`.
+
+## Corners and surfaces
+
+Decision, 2026-10-29: Ari uses rounded surfaces throughout, with a restrained **4 / 8 / 12px** scale. Choose by role, not by page. The authoritative values live in `src/theme.css`; shadcn/Tailwind radius utilities map to the same tokens in `src/components/ui.css`.
+
+| Token | Radius | Use |
+| --- | --- | --- |
+| `--ari-radius-small` | 4px | Checkboxes, small labels, images inset inside thumbnails, menu items |
+| `--ari-radius-control` | 8px | Buttons, inputs, dropdowns, tooltips, navigation items, media previews |
+| `--ari-radius-surface` | 12px | Cards, chat bubbles, banners, dialogs, empty-state panels |
+| `--ari-radius-full` | Fully round | Dots, circular controls and slider tracks |
+
+- Use `Card` from `src/components/ui/card.tsx` for bordered panels. It owns the surface, border, radius and shadow; callers supply layout and padding. Its `as` prop preserves section/article semantics.
+- Round the outside of a continuous list, keeping internal dividers straight. Edge rows follow the frame's inner corners using `--ari-radius-surface-inner`, derived from the surface radius minus the 1px border.
+- Fit nested corners to their spacing: a thumbnail's 8px frame contains a 4px image; a colored region touching a card edge follows the inner frame radius.
+- Do not add blanket `overflow: hidden` to cards. Preserve focus outlines, menus and other content that may extend beyond the frame. Clip media at its own boundary; use inset focus outlines for rows inside scrolling lists.
+- Straight internal dividers, inline text links and the viewport-flush app shell are intentional exceptions. Dots remain circles; avoid turning ordinary buttons into pills.
+- Use radius tokens, `inherit`, or an intentional `0`, never local numeric radii or arbitrary `rounded-[…]` utilities. `npm run design:check` checks authored CSS and inline styles; it runs with tests and builds.
+
+When adding a surface, check its normal, selected, loading and error states, keyboard focus, and its mobile layout. A code check prevents new corner values; visual review still catches missing rounding and poorly fitted nested corners.
 
 ## In code
 

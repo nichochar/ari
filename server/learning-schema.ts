@@ -5,6 +5,7 @@ const text = (max: number) => z.string().max(max);
 const id = text(120).min(1);
 const timestamp = z.iso.datetime();
 const ids = z.array(id).max(10000);
+export const MAX_MAIN_MESSAGE_LENGTH = 100000;
 
 export const curriculumSchema = z.object({
   id, learnerId: id, title: text(200).min(1), description: text(10000), topic: text(300).min(1),
@@ -29,7 +30,7 @@ export const learningProposalSchema = z.object({
   sourceUrls: z.array(text(4000).url().refine(value => ['http:', 'https:'].includes(new URL(value).protocol), 'Sources must use HTTP or HTTPS.')).max(30).optional(),
 }).strict();
 export const mainMessageSchema = z.object({
-  id, role: z.enum(['user', 'assistant']), content: text(100000), createdAt: timestamp,
+  id, role: z.enum(['user', 'assistant']), content: text(MAX_MAIN_MESSAGE_LENGTH), createdAt: timestamp,
   status: z.enum(['pending', 'streaming', 'complete', 'failed']), error: text(4000).optional(),
   runId: id.optional(), proposalIds: ids.optional(), materialIds: ids.optional(), curriculumId: id.optional(),
   proactive: z.boolean().optional(), deliveredAt: timestamp.optional(), readAt: timestamp.optional(),

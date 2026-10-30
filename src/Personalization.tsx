@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { Card } from './components/ui/card';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, FileText, Folder, History, MessageCircle, Pencil, RotateCcw } from 'lucide-react';
 import type { PersonalizationDocument, PersonalizationRead, PersonalizationRevision, PersonalizationView } from '../shared/personalization';
 import { Markdown } from './Markdown';
@@ -45,7 +46,7 @@ function PersonalizationCard({ document, title, description, refresh, discuss }:
       await refresh(); setHistoryOpen(false); setEditing(false); setStatus('Earlier notes restored. Your previous version remains in history.');
     } catch (failure) { setError(learningError(failure)); } finally { setBusy(false); }
   }
-  return <section className="settings-form personalization-card">
+  return <Card as="section" className="settings-form personalization-card">
     <div className="card-heading"><h2>{title}</h2><span className="personalization-filename">{document.path}</span></div>
     <p className="memory-description">{description}</p>
     {editing ? <><label>{title}<Textarea rows={10} maxLength={12000} value={content} onChange={event => setContent(event.target.value)} /></label>
@@ -64,25 +65,35 @@ function PersonalizationCard({ document, title, description, refresh, discuss }:
       </div> : <p>No earlier versions yet.</p>}
       {error && <p className="inline-error" role="alert">{error}</p>}
     </DialogContent></Dialog>
-  </section>;
+  </Card>;
 }
 
-function Memories({ data, discuss }: { data: PersonalizationView; discuss: (text: string) => void }) {
+function Memories({ data, discuss, refresh }: { data: PersonalizationView; discuss: (text: string) => void; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false), [directory, setDirectory] = useState('memories/');
   const [selected, setSelected] = useState<PersonalizationRead | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const request = useRef(0);
   const files = data.files.filter(item => item.path.startsWith(directory));
   const folders = [...new Set(files.map(item => item.path.slice(directory.length)).filter(path => path.includes('/')).map(path => directory + path.split('/')[0] + '/'))].sort();
-  async function read(path: string) {
+  const read = useCallback(async (path: string) => {
     const sequence = ++request.current;
     setLoading(true); setError(''); setSelected(null);
     try {
       const result = await learningApi<PersonalizationRead>('/personalization/file?path=' + encodeURIComponent(path) + '&limit=64000');
       if (sequence === request.current) setSelected(result);
     } catch (failure) { if (sequence === request.current) setError(learningError(failure)); } finally { if (sequence === request.current) setLoading(false); }
-  }
+  }, []);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  useEffect(() => {
+    const current = selectedRef.current;
+    if (!current) return;
+    const entry = data.files.find(item => item.path === current.path);
+    if (!entry) setSelected(null);
+    else if (entry.hash !== current.hash) void read(current.path);
+  }, [data.files, read]);
+  useEffect(() => () => { request.current++; }, []);
   function browse(path: string) { request.current++; setDirectory(path); setSelected(null); setLoading(false); setError(''); }
-  return <section className="settings-form personalization-card personalization-memories"><div className="card-heading"><h2>Learning memories</h2><Button variant="ghost" aria-expanded={open} aria-controls="personalization-memory-browser" onClick={() => setOpen(value => !value)}>{open ? 'Hide memories' : 'Browse memories'}</Button></div>
+  return <Card as="section" className="settings-form personalization-card personalization-memories"><div className="card-heading"><h2>Learning memories</h2><Button variant="ghost" aria-expanded={open} aria-controls="personalization-memory-browser" onClick={() => { if (!open) void refresh(); setOpen(value => !value); }}>{open ? 'Hide memories' : 'Browse memories'}</Button></div>
     <p className="memory-description">Notes Ari keeps about subjects, practice and what helps you learn.</p>
     {open && <div id="personalization-memory-browser"><div className="memory-directory"><Folder size={14} /><span>{directory}</span>{directory !== 'memories/' && <Button variant="ghost" size="sm" onClick={() => browse(directory.slice(0, -1).split('/').slice(0, -1).join('/') + '/')}><ArrowLeft size={13} />Up</Button>}</div>
       <div className="memory-file-list">{folders.map(folder => <Button key={folder} variant="ghost" onClick={() => browse(folder)}><Folder size={14} />{folder.slice(directory.length)}</Button>)}
@@ -91,19 +102,28 @@ function Memories({ data, discuss }: { data: PersonalizationView; discuss: (text
       {loading && <p role="status">Opening memory…</p>}{error && <p className="inline-error" role="alert">{error}</p>}
       {selected && <div className="memory-file-view"><h3>{selected.path.slice(directory.length)}</h3><Markdown>{selected.content}</Markdown>{selected.truncated && <p className="memory-description">Showing the first part of this note. Ask Ari to read more.</p>}<Button variant="secondary" onClick={() => discuss(`Let’s review the learning memory at ${selected.path}. `)}><MessageCircle size={14} />Discuss with Ari</Button></div>}
     </div>}
-  </section>;
+  </Card>;
 }
 
-export function PersonalizationSettings({ data, refresh, discuss }: { data: PersonalizationView; refresh: () => Promise<void>; discuss: (text: string) => void }) {
+export function PersonalizationSettings({ data, refresh, discuss, memoryRevision = '' }: {
+  data: PersonalizationView; refresh: () => Promise<void>; discuss: (text: string) => void; memoryRevision?: string;
+}) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [workspace, setWorkspace] = useState<PersonalizationView | null>(null), [filesError, setFilesError] = useState('');
+  const workspaceRequest = useRef(0);
+  const refreshWorkspace = useCallback(async () => {
+    const sequence = ++workspaceRequest.current;
+    try {
+      const next = await learningApi<PersonalizationView>('/personalization');
+      if (sequence === workspaceRequest.current) { setWorkspace(next); setFilesError(''); }
+    } catch (failure) { if (sequence === workspaceRequest.current) setFilesError(learningError(failure)); }
+  }, []);
   useEffect(() => {
-    let active = true;
-    void learningApi<PersonalizationView>('/personalization').then(next => {
-      if (active) { setWorkspace(next); setFilesError(''); }
-    }).catch(failure => { if (active) setFilesError(learningError(failure)); });
-    return () => { active = false; };
-  }, [data]);
+    void refreshWorkspace();
+    const focus = () => void refreshWorkspace();
+    window.addEventListener('focus', focus);
+    return () => { workspaceRequest.current++; window.removeEventListener('focus', focus); };
+  }, [data.user.hash, data.user.revision, data.tutor.hash, data.tutor.revision, memoryRevision, refreshWorkspace]);
   async function revisit() {
     setBusy(true); setError('');
     try { await learningApi('/onboarding/begin', {}); await refresh(); discuss(''); }
@@ -111,7 +131,7 @@ export function PersonalizationSettings({ data, refresh, discuss }: { data: Pers
   }
   if (!data) return null;
   return <div className="personalization-settings"><PersonalizationDocuments data={data} refresh={refresh} discuss={discuss} />
-    {workspace ? <Memories data={workspace} discuss={discuss} /> : <p className="memory-description" role={filesError ? undefined : 'status'}>{filesError || 'Loading learning memories…'}</p>}
+    {workspace ? <Memories data={workspace} discuss={discuss} refresh={refreshWorkspace} /> : <p className="memory-description" role={filesError ? undefined : 'status'}>{filesError || 'Loading learning memories…'}</p>}
     {workspace && filesError && <p className="inline-error" role="alert">{filesError}</p>}
     <div className="personalization-revisit"><p>You can revisit your goals and tutor preferences whenever they change.</p><Button variant="ghost" loading={busy} onClick={() => void revisit()}>Revisit setup with Ari</Button>{error && <p className="inline-error" role="alert">{error}</p>}</div>
   </div>;
@@ -135,10 +155,10 @@ export function OnboardingConversation({ data, refresh, discuss, hasAnswer, disa
     } catch (failure) { setError(learningError(failure)); } finally { setBusy(false); }
   }
   if (data.onboarding.status !== 'new') return null;
-  return <section className="onboarding-conversation" aria-label="Getting to know you"><div className="onboarding-intro"><div><strong>Make Ari your tutor</strong><p>A few questions to get to know you. Share as much or as little as you like.</p></div>
+  return <Card as="section" className="onboarding-conversation" aria-label="Getting to know you"><div className="onboarding-intro"><div><strong>Make Ari your tutor</strong><p>A few questions to get to know you. Share as much or as little as you like.</p></div>
     <div className="onboarding-actions">{hasAnswer && <Button variant="ghost" size="sm" aria-expanded={review} aria-controls="onboarding-recap" onClick={() => setReview(value => !value)}>{review ? 'Hide notes' : 'Review setup'}</Button>}<Button variant="ghost" size="sm" disabled={busy || disabled} onClick={() => void decide('skip')}>Skip for now</Button>
       {hasAnswer && <Button variant="secondary" size="sm" loading={busy} disabled={disabled} onClick={() => void decide('complete')}><Check size={13} />Finish setup</Button>}</div></div>
     {review && <div id="onboarding-recap" className="onboarding-recap"><PersonalizationDocuments data={data} refresh={refresh} discuss={discuss} /></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
-  </section>;
+  </Card>;
 }

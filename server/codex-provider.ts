@@ -104,7 +104,7 @@ export function createCodexAsk(): AIAsk {
         const timer = setTimeout(() => {
           failure = new Error('AI_TIMEOUT');
           stopProcess(child.pid);
-        }, task === 'tutor' ? 180_000 : task === 'plan' ? 120_000 : 90_000);
+        }, task === 'tutor' ? 180_000 : 90_000);
         const collect = (chunk: Buffer) => {
           diagnostic = (diagnostic + chunk.toString()).slice(-32_000);
         };

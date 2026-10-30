@@ -61,11 +61,3 @@ export interface LearningView {
   unreadCount: number; provider: { configured: boolean; model: string; };
 }
 export interface MainChatRequest { id: string; message: string; curriculumId?: string; materialIds?: string[]; }
-
-// POST /api/learning/chat returns {runId}; GET /api/learning returns LearningView.
-// GET /api/learning/events provides SSE notifications; clients refetch on change.
-// POST /api/learning/proposals/:id/accept {revision}; /dismiss {revision}.
-// POST /api/learning/lessons/:id/prepare {}; POST /api/learning/read {}.
-// PATCH /api/learning/memory {content,revision}; POST /api/learning/materials
-// {title,kind:'note'|'link'|'pdf',text?,url?,data?,filename?}.
-// POST /api/learning/idle {} delivers pending background messages between exercises.

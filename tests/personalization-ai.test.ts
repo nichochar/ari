@@ -53,7 +53,7 @@ test('interactive tutoring receives structured image requests and file tools, pe
   } finally { await fx.close(); }
 });
 
-test('generation, verification, planning and review preserve their configured task runner while receiving fresh core notes', async () => {
+test('generation, verification and review preserve their configured task runner while receiving fresh core notes', async () => {
   const fx = await fixture();
   const seen: { task: AITask; instructions: string; payload: unknown; image: unknown }[] = [];
   const base: AIAsk = async (task, instructions, payload, image) => { seen.push({ task, instructions, payload, image }); return { configuredTask: task }; };
@@ -62,7 +62,7 @@ test('generation, verification, planning and review preserve their configured ta
   try {
     const payload = { scope: 'Synthetic task' };
     const image = 'data:image/png;base64,iVBORw0KGgo=';
-    for (const task of ['generate', 'verify', 'plan', 'review'] as const) assert.deepEqual(await ask(task, 'Original task rules', payload, image), { configuredTask: task });
+    for (const task of ['generate', 'verify', 'review'] as const) assert.deepEqual(await ask(task, 'Original task rules', payload, image), { configuredTask: task });
     for (const call of seen) { assert.match(call.instructions, /^Original task rules/); assert.match(call.instructions, /<TUTOR.md>/); assert.equal(call.payload, payload); assert.equal(call.image, image); }
     const tutor = await fx.workspace.read('TUTOR.md');
     await fx.workspace.write('TUTOR.md', '# Tutor\nAsk for a prediction first.', { expectedHash: tutor.hash, actor: 'user' });

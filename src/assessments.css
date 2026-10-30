@@ -2,7 +2,7 @@
 .assessment-back .ui-button { gap: 7px; font-size: .8rem; color: var(--ari-muted); }
 .assessment-status { color: var(--ari-muted); font-size: .78rem; }
 .assessment-history { display: grid; gap: 12px; }
-.assessment-history-item { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 21px 24px; background: var(--ari-surface); border: 1px solid var(--ari-border); }
+.assessment-history-item { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 21px 24px; }
 .assessment-history-item h2 { margin: 7px 0; font-size: 1.35rem; }
 .assessment-history-item p { margin: 0; color: var(--ari-muted); font-size: .8rem; }
 .assessment-history-item .ui-button { flex-shrink: 0; }
@@ -18,7 +18,7 @@
 .assessment-muted { color: var(--ari-muted); font-size: .85rem; }
 .assessment-progress { display: grid; justify-items: center; padding: 55px 20px; color: var(--ari-muted); }
 .assessment-progress .tutor-waiting { justify-content: center; }
-.assessment-proposal { max-width: 760px; padding: 27px 30px; border: 1px solid var(--ari-border); background: var(--ari-surface); }
+.assessment-proposal { max-width: 760px; padding: 27px 30px; }
 .assessment-proposal h2 { margin: 0 0 15px; }
 .assessment-proposal > .markdown { color: var(--ari-muted); font-size: .92rem; }
 .assessment-topics { display: grid; gap: 13px; margin: 24px 0; }
@@ -27,7 +27,6 @@
 .assessment-duration { width: min(260px, 100%); margin: 22px 0; }
 .assessment-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .85fr); align-items: start; gap: 24px; margin-top: 20px; }
 .assessment-main, .assessment-work { display: grid; gap: 20px; min-width: 0; }
-.assessment-paper, .assessment-review, .assessment-submit { background: var(--ari-surface); border: 1px solid var(--ari-border); box-shadow: var(--ari-shadow); }
 .assessment-paper-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 20px 25px 17px; border-bottom: 1px solid var(--ari-border); }
 .assessment-paper-heading h2 { margin: 0; font-size: 1.35rem; }
 .assessment-paper-heading > span, .assessment-problem-heading > span { flex: none; color: var(--ari-muted); font-size: .75rem; }
@@ -66,10 +65,10 @@
 .assessment-chat-messages .chat-message { margin-bottom: 18px; }
 .assessment-message-photos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .assessment-message-photos .ui-button { padding: 0; height: auto; border: 0; background: transparent; }
-.assessment-message-photos img { display: block; max-width: 120px; max-height: 100px; object-fit: contain; border: 1px solid var(--ari-border); }
+.assessment-message-photos img { border-radius: var(--ari-radius-control); display: block; max-width: 120px; max-height: 100px; object-fit: contain; border: 1px solid var(--ari-border); }
 .assessment-photo-dialog { width: min(1000px, calc(100vw - 28px)); max-width: 1000px; max-height: calc(100dvh - 30px); overflow: auto; }
-.assessment-photo-dialog > img { display: block; max-width: 100%; max-height: 75dvh; object-fit: contain; margin: 20px auto 0; }
-.assessment-expanded-camera { height: 70dvh; margin-top: 18px; }
+.assessment-photo-dialog > img { border-radius: var(--ari-radius-control); display: block; max-width: 100%; max-height: 75dvh; object-fit: contain; margin: 20px auto 0; }
+.assessment-expanded-camera { border-radius: var(--ari-radius-control); overflow: hidden; height: 70dvh; margin-top: 18px; }
 .assessment-grading { display: flex; align-items: center; gap: 8px; color: var(--ari-muted); font-size: .83rem; }
 .assessment-grading .tutor-waiting { margin: 0; }
 .assessment-submit .ui-alert { font-weight: 400; }

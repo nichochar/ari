@@ -161,6 +161,7 @@
   padding: 8px 10px;
   font: inherit;
   font-size: .84rem;
+  font-weight: 400;
   line-height: 1.5;
   transition: border-color 120ms;
 }

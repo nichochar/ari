@@ -33,7 +33,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   const [pageErrors, setPageErrors] = useState<Record<string, string>>({});
   const [unsavedPages, setUnsavedPages] = useState<Record<string, UnsavedPage[]>>({});
   const [outgoingMessages, setOutgoingMessages] = useState<OutgoingMessage[]>([]);
-  const [confidence, setConfidence] = useState(3);
+  const [confidence, setConfidence] = useState<number | null>(null);
   const [reflectionNotes, setReflectionNotes] = useState('');
   const [reflectionBusy, setReflectionBusy] = useState(false);
   const reflectionBusyRef = useRef(false);
@@ -54,6 +54,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   }, [active, camera.stop]);
   useEffect(() => () => gradeCaptureRef.current?.abort(), []);
   const progress = exercise ? state?.progress[exercise.id] : undefined;
+  const reflectionReady = !!state && !!exercise;
   const pages = useMemo(() => (state?.exercisePages || []).filter(item => item.exerciseId === selectedId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [state?.exercisePages, selectedId]);
   const pageError = pageErrors[selectedId] || '';
@@ -81,11 +82,12 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     if (pane && shouldFollowConversation.current) pane.scrollTop = pane.scrollHeight;
   }, [conversation, selectedId, active]);
   useEffect(() => {
-    setConfidence(progress?.confidence || 3);
+    if (!reflectionReady) return;
+    setConfidence(progress?.confidence || null);
     const reflection = [...(state?.reflections || [])].reverse().find(item => item.exerciseId === selectedId);
     setReflectionNotes(reflection?.notes || '');
     setReflectionMessage('');
-  }, [selectedId]); // Deliberately do not reset notes when state refreshes.
+  }, [selectedId, reflectionReady]); // Deliberately do not reset notes when state refreshes.
 
   function cancelCapture() { gradeCaptureRef.current?.abort(); }
   function invalidateUpload() { uploadReadRef.current++; }
@@ -264,7 +266,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     reader.readAsDataURL(file);
   }
   async function saveReflection() {
-    if (!exercise || reflectionBusyRef.current || pageBusyRef.current || sendBusyRef.current) return;
+    if (!exercise || confidence === null || reflectionBusyRef.current || pageBusyRef.current || sendBusyRef.current) return;
     reflectionBusyRef.current = true;
     setReflectionBusy(true);
     setReflectionMessage('');

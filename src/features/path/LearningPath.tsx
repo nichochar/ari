@@ -5,7 +5,7 @@ import { PageHeader } from '../../components/page-header';
 import { Markdown } from '../../Markdown';
 import { ArrowRight, BookOpen, Check, Plus } from 'lucide-react';
 import type { AppState, Difficulty, Exercise } from '../../../shared/types';
-import { AriIcon, AriMark, AriSun } from '../../components/ui/ari-mark';
+import { AriMark, AriSun } from '../../components/ui/ari-mark';
 import { Select } from '../../components/ui/select';
 import { useLearning } from '../../useLearning';
 import type { LearningPathController } from './useLearningPath';
@@ -40,7 +40,6 @@ export function LearningPath({ path, state, catalog, learning, selectExercise, o
   }, [selectedModule?.id]);
   return <section className="page">
     <PageHeader title="Learning path" description="Choose a lesson, or explore what you want to learn next." />
-    <Button variant="plain" className="learning-chat-entry" onClick={() => { openChat(activeCurriculum?.id || ''); }}><span className="learning-entry-mark"><AriIcon size={25} /></span><span><strong>Talk with Ari</strong><small>Ask a question or shape your next learning path.</small></span>{!!learning.data?.unreadCount && <><i className="unread-dot" aria-hidden="true" /><span className="sr-only">Unread message</span></>}<ArrowRight size={18} /></Button>
     {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { openChat('', 'I’d like to learn a new subject. '); }}><Plus size={14} />Explore a new subject</Button></div>}
     <div className="path-layout">
       <Card className="module-list" ref={lessonListRef}>{pathModules.map((module, index) => {

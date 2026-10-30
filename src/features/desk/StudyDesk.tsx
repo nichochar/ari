@@ -9,12 +9,12 @@ import { ChatComposer, ChatMessage, ChatWaiting } from '../../components/chat';
 import { Alert } from '../../components/ui/alert';
 import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import { Slider } from '../../components/ui/slider';
 import { FileUpload } from '../../components/ui/file-upload';
 import { AriIcon, AriSun } from '../../components/ui/ari-mark';
 import { PhotoSet, Snapshot, photoIds, photoSource, workPhotoLabel, type OpenPhoto } from '../../components/study/photos';
 import { TutorBubble } from '../../components/study/TutorBubble';
 import { deskCameraContent } from './DeskCamera';
+import { ConfidenceRating } from './ConfidenceRating';
 import type { DeskController } from './useDesk';
 type StudyDeskProps = {
   desk: DeskController; exercise: Exercise; currentModule?: Module; nextExercise?: Exercise; nextLesson?: Module;
@@ -85,7 +85,7 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
       </div>
       <div className="work-column">
         <Card className="camera-panel">
-          <div className="panel-heading"><div><span className="eyebrow">YOUR PAPER</span><h2>Live view</h2></div>
+          <div className="panel-heading"><h2>Your paper</h2>
             <Button variant="icon" ref={expandButtonRef} title="Expand paper view"
               aria-label="Expand paper view" onClick={() => setCameraExpanded(true)}><Expand size={19} /></Button>
           </div>
@@ -146,25 +146,17 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
           </div>}
         </Card>
         <Card className="reflection-card">
-          <span className="eyebrow">AFTER YOUR WORK</span>
-          <h2>Reflect and mark complete</h2>
-          <div className="confidence-field"><span>Confidence <strong>{confidence}/5</strong></span>
-            <Slider label="Confidence" min={1} max={5} step={1} value={confidence} onValueChange={setConfidence}
-              valueText={value => `${value} out of 5`} />
-          </div>
+          <h2>Finish &amp; continue</h2>
+          <ConfidenceRating value={confidence} onValueChange={setConfidence} disabled={reflectionBusy} />
           <label>What clicked, or what remains unclear? <span>(optional)</span>
             <Textarea value={reflectionNotes} onChange={event => setReflectionNotes(event.target.value)} rows={3} maxLength={4000} />
           </label>
-          <Button variant="primary" loading={reflectionBusy} disabled={reflectionBusy || !!pageBusy || !!sendMode} onClick={() => void saveReflection()}>
+          <Button variant="primary" loading={reflectionBusy} disabled={confidence === null || reflectionBusy || !!pageBusy || !!sendMode} onClick={() => void saveReflection()}>
             <Check size={16} /> {reflectionBusy ? 'Saving…' : progress?.status === 'completed' ? 'Save another reflection' : 'Mark complete and save'}
           </Button>
           {reflectionMessage && <p className="status-line" role="status">{reflectionMessage}</p>}
           {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <AriSun size={28} />}{reviewStatus}</p>}
-        </Card>
-        <Card className="next-actions">
-          <span className="eyebrow">NEXT STEP</span>
-          <p>{progress?.status === 'completed' ? 'Ready for another challenge?' : 'Work through this on paper. Send a question or ask for a grade when ready.'}</p>
-          <div>
+          {(nextExercise || nextLesson || currentModule) && <div className="next-actions">
             {nextExercise && <Tooltip>
               <TooltipTrigger render={<Button variant="secondary" className="next-learning-action" onClick={() => selectExercise(nextExercise.id)} />}>
                 <span>Next exercise: {nextExercise.title}</span><ArrowRight size={16} />
@@ -181,7 +173,7 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
               onClick={() => void generateExercise(currentModule.id, 'stretch')}>
               {generationBusy ? 'Generating…' : 'Try a harder exercise'} <AriIcon size={15} />
             </Button>}
-          </div>
+          </div>}
         </Card>
       </div>
     </div>

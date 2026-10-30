@@ -81,6 +81,12 @@ The sun is the only brand colour, and it is never used for errors, links or butt
 
 DM Sans and Newsreader are self-hosted in `public/fonts/` and loaded through `src/fonts.css`.
 
+Utility cards use one descriptive heading in Newsreader, without a second label repeating its purpose. An eyebrow is useful for distinct metadata, such as a lesson's phase or subject. Related steps share a card, with a simple internal divider when needed: reflection and next-exercise actions belong together.
+
+## Confidence ratings
+
+Finish & continue uses five numbered choices through the shared Base UI `SegmentedControl`. The selected description is text only, with no repeated number or endpoint labels. New exercises start unselected; saved ratings are restored. A rating is required to save a reflection. Keep radio-group semantics, arrow-key navigation and visible keyboard focus.
+
 ## Corners and surfaces
 
 Decision, 2026-10-29: Ari uses rounded surfaces throughout, with a restrained **4 / 8 / 12px** scale. Choose by role, not by page. The authoritative values live in `src/theme.css`; shadcn/Tailwind radius utilities map to the same tokens in `src/components/ui.css`.

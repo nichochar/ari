@@ -121,6 +121,36 @@ test('new turn forks committed context and injects proactive assistant messages 
   assert.notEqual((second.context![0] as CodexLearningContext).threadId, fork.threadId);
 });
 
+test('native automatic compaction keeps streaming and recovery without an app threshold override', async () => {
+  const c = new FakeCodex(); const p = provider(c);
+  c.actions.push(async (threadId, turn) => {
+    await c.emit('turn/started', { threadId, turn });
+    const item = { type: 'contextCompaction', id: 'automatic-compaction' };
+    turn.items.push(item);
+    await c.emit('item/started', { threadId, turnId: turn.id, item });
+    await c.emit('item/completed', { threadId, turnId: turn.id, item });
+    await c.answer('Continuing after native compaction.')(threadId, turn);
+  });
+  let streamed = '';
+  const compactions: { status: string; id?: string }[] = [];
+  const result = await p.run({ ...request(), onText: delta => { streamed += delta; }, onCompaction: event => { compactions.push(event); } });
+  assert.deepEqual(compactions.map(event => event.status), ['started', 'completed']);
+  assert.equal(compactions[0].id, compactions[1].id);
+  assert.equal(p.managesCompaction, true);
+  assert.equal(streamed, 'Continuing after native compaction.');
+  assert.equal(result.text, streamed);
+  assert.equal(result.inputTokens, 129);
+  const recovered = await p.run({ ...request(result.context), resumeText: result.text });
+  assert.equal(recovered.text, result.text);
+  await p.run({ ...request([...recovered.context!, { role: 'user', content: 'Continue.' }]), runKey: 'next-run' });
+  for (const call of c.calls.filter(v => ['thread/start', 'thread/resume', 'thread/fork'].includes(v.method))) {
+    assert.equal(Object.hasOwn(call.params.config, 'model_auto_compact_token_limit'), false);
+    assert.equal(Object.hasOwn(call.params.config, 'model_context_window'), false);
+  }
+  assert.equal(c.calls.filter(v => v.method === 'turn/start').length, 2);
+  assert.equal(c.calls.some(v => v.method === 'thread/compact/start'), false);
+});
+
 test('durable completed checkpoint is returned without generating a duplicate answer', async () => {
   const c = new FakeCodex(); const p = provider(c); const first = await p.run(request());
   const count = c.calls.filter(v => v.method === 'turn/start').length;
@@ -624,4 +654,25 @@ test('legacy workspace readiness failure starts no learner turn and preserves th
   assert.equal(c.calls.filter(call => call.method === 'turn/start').length, 1, 'only the original turn ran');
   assert.ok(c.mcpStatusPolls >= 1);
   c.close();
+});
+
+test('model picker follows catalog pagination and exposes only supported visual models and efforts', async () => {
+  class CatalogCodex extends FakeCodex {
+    async request<T>(method: string, raw: unknown): Promise<T> {
+      if (method !== 'model/list') return super.request<T>(method, raw);
+      const params = raw as Obj; this.calls.push({ method, params });
+      const model = (id: string, extra: Obj = {}) => ({ model: id, displayName: id, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }, { reasoningEffort: 'future-unknown' }], defaultReasoningEffort: 'high', inputModalities: ['text', 'image'], ...extra });
+      return (params.cursor ? { data: [model('gpt-second')], nextCursor: null } : {
+        data: [model('gpt-first'), model('gpt-hidden', { hidden: true }), model('gpt-text', { inputModalities: ['text'] }), model('other-provider')], nextCursor: 'page-2',
+      }) as T;
+    }
+  }
+  const client = new CatalogCodex(), p = provider(client);
+  const models = await p.listModels!();
+  assert.deepEqual(models.map(model => model.id), ['gpt-first', 'gpt-second']);
+  assert.deepEqual(models[0].efforts, ['low', 'high']);
+  assert.equal(models[0].defaultEffort, 'high');
+  assert.equal(client.calls.filter(call => call.method === 'model/list')[1].params.cursor, 'page-2');
+  assert.equal(client.calls.some(call => call.method === 'turn/start'), false);
+  p.close?.();
 });

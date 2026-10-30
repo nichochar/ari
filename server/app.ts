@@ -17,6 +17,7 @@ import { assessmentRoutes } from './assessment-routes.js';
 import { LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
 import { PersonalizationError, PersonalizationWorkspace } from './personalization.js';
 import { createPersonalizedAsk } from './personalization-ai.js';
+import type { ModelRuntime } from './model-runtime.js';
 import { profileDefaults } from './personalization-tools.js';
 
 const curatedExercises = exercises as Exercise[];
@@ -24,7 +25,7 @@ const curriculumModules = modules as Module[];
 const moduleMap = new Map(curriculumModules.map(module => [module.id, module]));
 const curatedMap = new Map(curatedExercises.map(exercise => [exercise.id, exercise]));
 
-type AppOptions = { learningProvider?: LearningAgentProvider; personalizationProvider?: LearningAgentProvider; learningConfigured?: boolean; dbPath?: string; legacyStatePath?: string; ai?: AIAsk; aiConfigured?: boolean; model?: string; distPath?: string; workspacePath?: string };
+type AppOptions = { runtimeFactory?: (store: StateStore) => ModelRuntime; learningProvider?: LearningAgentProvider; personalizationProvider?: LearningAgentProvider; learningConfigured?: boolean; dbPath?: string; legacyStatePath?: string; ai?: AIAsk; aiConfigured?: boolean; model?: string; distPath?: string; workspacePath?: string };
 class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 const body = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const parsed = schema.safeParse(value);
@@ -41,7 +42,7 @@ const failAI = (error: unknown): never => {
     if (error.code === 'CODEX_RATE_LIMIT' || error.code === 'API_RATE_LIMIT' || error.code === 'CODEX_BUSY') throw new HttpError(429, 'The tutor is temporarily rate limited or busy. Try again shortly.');
     if (error.code === 'CODEX_TIMEOUT' || error.code === 'API_TIMEOUT') throw new HttpError(504, 'The tutor timed out. Try again.');
     if (error.code === 'CODEX_AUTH' || error.code === 'CODEX_UNAVAILABLE') throw new HttpError(503, 'Codex tutoring is unavailable. Check Codex sign-in and local installation.');
-    if (error.code === 'CODEX_MODEL') throw new HttpError(503, 'The configured Codex model is unavailable. Check CODEX_TUTOR_MODEL and CODEX_MODEL.');
+    if (error.code === 'CODEX_MODEL') throw new HttpError(503, 'The selected Codex model is unavailable. Choose an available model in Settings or check your account access.');
     if (error.code === 'CODEX_UPGRADE') throw new HttpError(503, 'This model needs a newer Codex CLI. Update the local adapter configured by CODEX_BIN.');
     if (error.code === 'API_AUTH') throw new HttpError(503, 'The AI service is not authorized. Check server credentials.');
     if (error.code === 'API_CREDITS') throw new HttpError(503, 'OpenAI credits are exhausted. Add credits or configure another tutor provider.');
@@ -174,10 +175,12 @@ export function createApp(options: AppOptions = {}) {
   const store = new StateStore(options.dbPath ?? process.env.ARI_DB_PATH ?? join(process.cwd(), '.local', 'ari.sqlite'),
     { legacyPath: options.legacyStatePath ?? process.env.ARI_LEGACY_PATH ?? join(process.cwd(), '.local', 'state.json') });
   app.locals.store = store;
+  const runtime = options.runtimeFactory?.(store);
+  app.locals.modelRuntime = runtime;
   const workspacePath = resolve(options.workspacePath ?? (options.dbPath ? `${options.dbPath}.workspace` : process.env.ARI_WORKSPACE_PATH ?? join(homedir(), '.ari', 'workspace')));
   const workspace = new PersonalizationWorkspace(store, workspacePath);
   app.locals.workspace = workspace;
-  const learning = new LearningService(store, options.learningConfigured === false ? null : options.learningProvider, workspace);
+  const learning = new LearningService(store, options.learningConfigured === false ? null : runtime?.learningProvider ?? options.learningProvider, workspace);
   app.locals.learning = learning;
   const assessments = new AssessmentService(store, learning);
   app.locals.assessments = assessments;
@@ -190,7 +193,7 @@ export function createApp(options: AppOptions = {}) {
     return { ...state, generatedExercises: [...state.generatedExercises, ...data.exercises.filter(e => !existing.has(e.id) && data.lessons.some(l => l.id === e.moduleId && l.status === 'ready'))] };
   };
   const findModule = async (id: string) => (await store.readLearning()).lessons.find(l => l.id === id && l.status === 'ready') ?? moduleMap.get(id);
-  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(options.ai, options.personalizationProvider, workspace, () => learning.personalizationChanged());
+  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(runtime?.ai ?? options.ai, runtime?.personalizationProvider ?? options.personalizationProvider, workspace, () => learning.personalizationChanged());
   const aiConfigured = options.aiConfigured ?? Boolean(ai);
   const model = options.model ?? process.env.OPENAI_MODEL ?? 'gpt-5.4';
   const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
@@ -220,8 +223,25 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api', express.json({ limit: '7mb', type: 'application/json' }));
   app.use('/api/learning', learningRoutes(learning));
   app.use('/api/assessments', assessmentRoutes(assessments));
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok', aiConfigured, model, storage: 'sqlite',
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok', aiConfigured, model: runtime?.personalizationProvider?.model ?? model, storage: 'sqlite',
     mainTutor: { configured: Boolean(learning.provider), model: learning.provider?.model ?? null } }));
+  app.get('/api/model-settings', async (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!runtime) throw new HttpError(503, 'Model settings are unavailable in this preview.');
+    try { res.json(await runtime.settings.view()); }
+    catch { throw new HttpError(503, 'Could not load models from the configured OpenAI connection. Check the connection and try again.'); }
+  });
+  app.patch('/api/model-settings', async (req, res) => {
+    if (!runtime) throw new HttpError(503, 'Model settings are unavailable in this preview.');
+    try {
+      const saved = await runtime.settings.save(req.body);
+      learning.events.emit('change'); res.json(saved);
+    } catch (error) {
+      if (error instanceof ZodError) throw error;
+      if (error instanceof LearningProviderError && error.code === 'MODEL_SELECTION') throw new HttpError(400, error.message);
+      throw new HttpError(503, 'Could not save the model choice. Check the OpenAI connection and try again.');
+    }
+  });
   app.get('/api/camera/status', async (_req, res) => res.json(await cameraBridge.status()));
   app.post('/api/camera/start', async (_req, res) => {
     try { await cameraBridge.start(); res.json(await cameraBridge.status()); }
@@ -491,7 +511,7 @@ export function createApp(options: AppOptions = {}) {
   app.get('/api/export', async (_req, res) => {
     const state = await store.read();
     res.setHeader('Content-Disposition', 'attachment; filename="ari-data.json"');
-    res.type('application/json').send(JSON.stringify(state, null, 2));
+    res.type('application/json').send(JSON.stringify({ ...state, ...(store.readModelSelection() ? { modelSelection: store.readModelSelection() } : {}) }, null, 2));
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   if (existsSync(join(dist, 'index.html'))) {

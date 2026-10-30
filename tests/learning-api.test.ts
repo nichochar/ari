@@ -101,6 +101,69 @@ test('actual provider compaction output is preserved independently of the full t
   } finally { if (original === undefined) delete process.env.LEARNING_COMPACTION_TOKENS; else process.env.LEARNING_COMPACTION_TOKENS = original; await fx.close(); }
 });
 
+test('provider-managed compaction bypasses the app threshold and preserves the transcript across reload', async () => {
+  const original = process.env.LEARNING_COMPACTION_TOKENS;
+  process.env.LEARNING_COMPACTION_TOKENS = '1';
+  let runs = 0;
+  const checkpoint = { type: 'provider-context', id: 'long-conversation' };
+  const fx = await fixture({ ...fixtureLearningProvider(), managesCompaction: true,
+    compact: async () => { assert.fail('The provider owns the compaction threshold'); },
+    run: async request => {
+      runs++;
+      if (runs === 2) assert.deepEqual(request.input[0], checkpoint);
+      assert.match(request.instructions, /TUTOR\.md/);
+      assert.match(request.instructions, /USER\.md/);
+      const context = [checkpoint];
+      const inputTokens = runs === 1 ? 250000 : 20000;
+      const text = `Answer ${runs}`;
+      await request.onCheckpoint?.(context, inputTokens, text);
+      return { output: [], context, text, inputTokens };
+    },
+  });
+  try {
+    await chat(fx, 'First question'); await fx.settle();
+    assert.ok((await fx.store().readLearning()).contextTokens > 64000);
+    await fx.restart();
+    await chat(fx, 'Follow-up question'); await fx.settle();
+    const d = await fx.store().readLearning();
+    assert.equal(runs, 2);
+    assert.deepEqual(d.messages.map(m => m.content), ['First question', 'Answer 1', 'Follow-up question', 'Answer 2']);
+    assert.deepEqual(d.context, [checkpoint]);
+    assert.ok(d.contextTokens < 64000);
+    assert.ok(d.runs.every(r => r.status === 'complete'));
+  } finally {
+    if (original === undefined) delete process.env.LEARNING_COMPACTION_TOKENS;
+    else process.env.LEARNING_COMPACTION_TOKENS = original;
+    await fx.close();
+  }
+});
+
+for (const fail of [false, true]) test(`compaction status is visible while running and clears after ${fail ? 'failure' : 'completion'}`, async () => {
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const base = fixtureLearningProvider();
+  const fx = await fixture({ ...base, managesCompaction: true, run: async request => {
+    await request.onCompaction?.({ status: 'started', id: 'native-item' }); entered(); await gate;
+    if (fail) throw new LearningProviderError('COMPACTION_FAILED', 'Compaction failed. Retry.');
+    await request.onCompaction?.({ status: 'completed', id: 'native-item' });
+    await request.onCompaction?.({ status: 'completed', id: 'native-item' });
+    return base.run(request);
+  } });
+  try {
+    await chat(fx, 'Continue our discussion'); await started;
+    assert.equal((await fx.service().view()).runs[0].activity, 'compacting');
+    release(); await fx.settle();
+    const d = await fx.store().readLearning();
+    assert.equal(d.runs[0].activity, undefined);
+    assert.equal(d.runs[0].status, fail ? 'failed' : 'complete');
+    assert.equal(d.events.filter(e => e.type === 'compaction').length, fail ? 0 : 1);
+    assert.equal(Boolean(d.compactedAt), !fail);
+    assert.equal(d.messages[0].content, 'Continue our discussion');
+    await fx.restart(); assert.equal((await fx.service().view()).runs[0].activity, undefined);
+  } finally { release(); await fx.close(); }
+});
+
 test('reflection analysis preserves user corrections, delivers at idle once and adds context', async () => {
   let release!: () => void; let begun!: () => void; const gate = new Promise<void>(resolve => release = resolve), started = new Promise<void>(resolve => begun = resolve);
   const provider = fixtureLearningProvider(undefined, async <T>() => { begun(); await gate; return { message: 'Compare an independent source next time.', memory: 'Stale inferred notes' } as T; });

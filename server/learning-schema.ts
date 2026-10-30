@@ -44,6 +44,7 @@ export const materialSchema = z.object({
   sourceData: text(7_000_000).regex(/^data:application\/pdf;base64,[A-Za-z0-9+/]+={0,2}$/).optional(),
 }).strict();
 export const learningRunSchema = z.object({
+  activity: z.literal('compacting').optional(),
   id, requestId: id, status: z.enum(['queued', 'running', 'complete', 'failed']),
   kind: z.enum(['chat', 'prepare', 'review']), createdAt: timestamp, updatedAt: timestamp,
   messageId: id.optional(), assistantMessageId: id.optional(), lessonId: id.optional(), proposalId: id.optional(), assessmentId: id.optional(), submissionId: id.optional(), error: text(4000).optional(),

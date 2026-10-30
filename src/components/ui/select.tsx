@@ -31,9 +31,10 @@ function SelectContent({ className, children, side = 'bottom', sideOffset = 5, a
   </SelectPrimitive.Portal>;
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+function SelectItem({ className, children, badge, ...props }: SelectPrimitive.Item.Props & { badge?: string }) {
   return <SelectPrimitive.Item data-slot="select-item" className={cn('ui-select-item', className)} {...props}>
     <SelectPrimitive.ItemText className="ui-select-item-text">{children}</SelectPrimitive.ItemText>
+    {badge && <span className="ui-select-badge">{badge}</span>}
     <SelectPrimitive.ItemIndicator className="ui-select-indicator"><Check size={15} /></SelectPrimitive.ItemIndicator>
   </SelectPrimitive.Item>;
 }
@@ -54,7 +55,7 @@ function SelectScrollDownButton({ className, ...props }: SelectPrimitive.ScrollD
   return <SelectPrimitive.ScrollDownArrow data-direction="down" className={cn('ui-select-scroll', className)} {...props}><ChevronDown size={15} /></SelectPrimitive.ScrollDownArrow>;
 }
 
-export interface SelectOption { value: string; label: string; disabled?: boolean; }
+export interface SelectOption { value: string; label: string; disabled?: boolean; badge?: string; }
 export interface SelectProps {
   value: string;
   onValueChange: (value: string) => void;
@@ -71,7 +72,7 @@ export interface SelectProps {
 function Select({ value, onValueChange, options, id, name, disabled, className, compact, ...labelProps }: SelectProps) {
   return <SelectRoot value={value} onValueChange={(next) => { if (next !== null) onValueChange(next); }} items={options} id={id} name={name} disabled={disabled}>
     <SelectTrigger id={id} size={compact ? 'sm' : 'default'} className={className} {...labelProps}><SelectValue /></SelectTrigger>
-    <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value} disabled={option.disabled}>{option.label}</SelectItem>)}</SelectContent>
+    <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value} disabled={option.disabled} badge={option.badge}>{option.label}</SelectItem>)}</SelectContent>
   </SelectRoot>;
 }
 

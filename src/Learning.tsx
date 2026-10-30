@@ -103,8 +103,10 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
               {message.role === 'assistant' && <ToolActivity data={data} runId={message.runId} running={message.status === 'pending' || message.status === 'streaming'} />}
             </> : undefined}>
             <Markdown>{message.content}</Markdown>
-          </ChatMessage> : message.status !== 'failed' && <ChatWaiting />}
-          {message.status === 'streaming' && message.content && <ChatWaiting label="Ari is writing…" />}
+          </ChatMessage> : message.status !== 'failed' && data.runs.find(run => run.id === message.runId)?.activity !== 'compacting' && <ChatWaiting />}
+          {data.runs.find(run => run.id === message.runId)?.activity === 'compacting' && message.role === 'assistant'
+            ? <ChatWaiting label="Compacting conversation…" showLabel />
+            : message.status === 'streaming' && message.content && <ChatWaiting label="Ari is writing…" />}
           {message.status === 'failed' && <div className="message-error" role="alert"><p>{message.error || 'Ari could not finish this reply.'}</p>{data.runs.find(run => run.id === message.runId)?.requestId === latestUserId ? <Button variant="ghost" disabled={busy} onClick={() => retry(message.runId)}><RefreshCw size={14} /> Retry message</Button> : <Button variant="ghost" onClick={() => { textarea.current?.focus(); textarea.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Continue the conversation <ArrowRight size={14} /></Button>}</div>}
           {message.proposalIds?.map(id => { const proposal = data.proposals.find(item => item.id === id); return proposal && <ProposalCard key={id} proposal={proposal} refresh={refresh} discuss={discuss} openCurriculum={openCurriculum} />; })}
         </div>)}

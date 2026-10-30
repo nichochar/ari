@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { LearningProviderError, type LearningAgentProvider, type LearningAgentRequest, type LearningTool } from './learning-provider.js';
 import { createCodexAppServer, type CodexAppServerClient, type CodexServerRequest } from './codex-app-server.js';
 import { createWorkspaceMcpBridge } from './personalization-mcp.js';
+import { reasoningEfforts, type ModelOption, type ReasoningEffort } from '../shared/model-settings.js';
 
 type ObjectValue = Record<string, unknown>;
 const object = (v: unknown): ObjectValue => v && typeof v === 'object' && !Array.isArray(v) ? v as ObjectValue : {};
@@ -209,6 +210,13 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
     // Attach immediately: early failure before awaiting done must not be unhandled.
     void done.catch(() => undefined);
     let compacted = false; let finished = false; let successful = false; let queue = Promise.resolve();
+    const completedCompactions = new Set<string>();
+    const completedCompaction = async (id: string) => {
+      compacted = true;
+      if (completedCompactions.has(id)) return;
+      completedCompactions.add(id);
+      await request?.onCompaction?.({ status: 'completed', id: hash([marker.threadId, id]) });
+    };
     const checkpoint = async () => request?.onCheckpoint?.([structuredClone(marker)], marker.inputTokens, text(marker));
     const fail = (cause: unknown) => { if (!finished) { finished = true; reject(failure(cause)); } };
     const unsubClose = c.onClose(fail);
@@ -231,9 +239,11 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
           if (typeof last.totalTokens === 'number') { marker.inputTokens = last.totalTokens; await checkpoint(); }
         }
         if (notification.method === 'item/agentMessage/delta' && typeof p.delta === 'string') await request?.onText?.(p.delta);
+        if (notification.method === 'item/started' && object(p.item).type === 'contextCompaction')
+          await request?.onCompaction?.({ status: 'started', id: hash([marker.threadId, object(p.item).id]) });
         if (notification.method === 'item/completed') {
           const item = object(p.item);
-          if (item.type === 'contextCompaction') compacted = true;
+          if (item.type === 'contextCompaction') await completedCompaction(String(item.id));
           if (item.type === 'dynamicToolCall' && item.success === true) {
             const call = marker.tools.find(t => t.callId === item.id);
             if (call) { call.delivered = true; await checkpoint(); }
@@ -245,7 +255,8 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
           const turn = object(p.turn);
           if (marker.turnId && turn.id !== marker.turnId) return;
           collect(marker, turn);
-          if (Array.isArray(turn.items) && turn.items.some(i => object(i).type === 'contextCompaction')) compacted = true;
+          if (Array.isArray(turn.items)) for (const item of turn.items.map(object))
+            if (item.type === 'contextCompaction') await completedCompaction(String(item.id));
           if (turn.status !== 'completed') throw error('CODEX_INCOMPLETE', 'Ari’s Codex response was interrupted. Retry to continue from saved work.');
           if (compacting && !compacted) throw error('COMPACTION_FAILED', 'Codex did not confirm context compaction. The previous context is preserved.');
           marker.state = 'complete'; marker.completedTurnId = String(turn.id); delete marker.pendingInput;
@@ -305,6 +316,30 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
   }
   return {
     model: `${model} · ${effort} · Codex`,
+    managesCompaction: true,
+    close() { void clientPromise?.then(c => c.close()).catch(() => undefined); },
+    async listModels() {
+      const c = await client();
+      const models: ModelOption[] = [];
+      const seen = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await c.request<{ data: ObjectValue[]; nextCursor?: string | null }>('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }, { timeoutMs: 15000 });
+        for (const model of page.data) {
+          if (model.hidden || typeof model.model !== 'string' || !/^gpt-/.test(model.model)) continue;
+          if (Array.isArray(model.inputModalities) && !model.inputModalities.includes('image')) continue;
+          const efforts = (Array.isArray(model.supportedReasoningEfforts) ? model.supportedReasoningEfforts : [])
+            .map(option => object(option).reasoningEffort).filter((effort): effort is ReasoningEffort => reasoningEfforts.includes(effort as ReasoningEffort));
+          if (!efforts.length || models.some(option => option.id === model.model)) continue;
+          models.push({ id: model.model, name: String(model.displayName || model.model), efforts,
+            defaultEffort: efforts.includes(model.defaultReasoningEffort as ReasoningEffort) ? model.defaultReasoningEffort as ReasoningEffort : efforts[0] });
+        }
+        cursor = page.nextCursor || undefined;
+        if (cursor && seen.has(cursor)) throw error('CODEX_FAILED', 'Could not finish loading the model list. Try again.');
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      return models;
+    },
     contextTokens: codexLearningContextTokens,
     async run(request) {
       let usingBridge = false;

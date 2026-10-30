@@ -96,7 +96,7 @@ export class LearningService {
   async recover() {
     await this.workspace.ready();
     const ids = await this.store.updateLearning(d => {
-      for (const r of d.runs) if (r.status === 'running') r.status = 'queued';
+      for (const r of d.runs) { delete r.activity; if (r.status === 'running') r.status = 'queued'; }
       return d.runs.filter(r => r.status === 'queued').map(r => r.id);
     });
     for (const id of ids) this.schedule(id);
@@ -328,7 +328,10 @@ export class LearningService {
       await this.store.updateLearning(d => { const r = d.runs.find(r => r.id === id)!; r.status = 'failed'; r.error = message; r.updatedAt = now();
         const m = d.messages.find(m => m.id === r.assistantMessageId); if (m) { m.content = (this.streaming.get(m.id) ?? m.content).slice(0, MAX_MAIN_MESSAGE_LENGTH); m.status = 'failed'; m.error = message; }
         const l = d.lessons.find(l => l.id === r.lessonId); if (l && l.status !== 'ready') { l.status = 'failed'; l.error = message; } });
-    } finally { if (run.assistantMessageId) this.streaming.delete(run.assistantMessageId); }
+    } finally {
+      if (run.assistantMessageId) this.streaming.delete(run.assistantMessageId);
+      await this.store.updateLearning(d => { const r = d.runs.find(r => r.id === run.id); if (r) delete r.activity; });
+    }
     await this.changed();
   }
   private async runChat(run: LearningRun) {
@@ -336,14 +339,29 @@ export class LearningService {
     const coreInstructions = await personalizationInstructions(this.workspace);
     let d = await this.store.readLearning();
     const message = d.messages.find(m => m.id === run.messageId)!;
+    const onCompaction = async (event: { status: 'started' | 'completed'; id?: string }) => {
+      await this.store.updateLearning(s => {
+        const r = s.runs.find(r => r.id === run.id)!;
+        if (event.status === 'started') r.activity = 'compacting';
+        else {
+          delete r.activity;
+          s.compactedAt = now();
+          if (!event.id || !s.events.some(e => e.type === 'compaction' && e.runId === run.id && e.callId === event.id))
+            s.events.push({ id: randomUUID(), runId: run.id, type: 'compaction', createdAt: now(), ...(event.id ? { callId: event.id } : {}), data: {} });
+        }
+      });
+      await this.changed();
+    };
     const configuredThreshold = Number(process.env.LEARNING_COMPACTION_TOKENS ?? 64000);
     const threshold = Number.isFinite(configuredThreshold) && configuredThreshold >= 1 && configuredThreshold <= 200000 ? configuredThreshold : 64000;
-    if (!run.context && Math.max(d.contextTokens, Math.ceil(JSON.stringify(d.context).length / 3)) + Math.ceil((message.content.length + JSON.stringify(learningTools).length + instructions.length + coreInstructions.length) / 3) >= threshold && d.context.length) {
+    if (!provider.managesCompaction && !run.context && Math.max(d.contextTokens, Math.ceil(JSON.stringify(d.context).length / 3)) + Math.ceil((message.content.length + JSON.stringify(learningTools).length + instructions.length + coreInstructions.length) / 3) >= threshold && d.context.length) {
+      await onCompaction({ status: 'started' });
       const compacted = await provider.compact(d.context, instructions + '\n' + coreInstructions);
       await this.store.updateLearning(s => {
         const appended = contextHash(s.context.slice(0, d.context.length)) === contextHash(d.context) ? s.context.slice(d.context.length) : [];
         s.context = [...compacted, ...appended]; s.contextTokens = provider.contextTokens?.(s.context) ?? Math.ceil(JSON.stringify(s.context).length / 4); s.compactedAt = now();
-        s.events.push({ id: randomUUID(), runId: run.id, type: 'compaction', createdAt: now(), data: { previousTokens: d.contextTokens } }); });
+      });
+      await onCompaction({ status: 'completed' });
       d = await this.store.readLearning();
     }
     const focus = d.curricula.find(c => c.id === message.curriculumId);
@@ -354,6 +372,7 @@ export class LearningService {
     const runInstructions = await currentInstructions();
     let streaming = ''; let lastEmission = 0;
     const result = await provider.run({ instructions: runInstructions, refreshInstructions: currentInstructions, input: context, tools: learningTools, runKey: run.id, resumeText: run.completedText,
+      onCompaction,
       onText: async (delta: string) => {
         if (delta.length > MAX_MAIN_MESSAGE_LENGTH - streaming.length) {
           streaming += delta.slice(0, MAX_MAIN_MESSAGE_LENGTH - streaming.length);

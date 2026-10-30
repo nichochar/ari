@@ -241,6 +241,7 @@ p { line-height: 1.55; }
 .message-details-button:hover { color: var(--ari-text); }
 .message-details-dialog { width: min(480px, calc(100vw - 32px)); }
 .tutor-waiting { display: flex; align-items: center; justify-content: flex-start; justify-self: start; color: var(--ari-muted); padding: 12px 0; }
+.waiting-label { margin-left: 10px; font-size: .85rem; }
 .message-error { justify-self: end; max-width: 91%; color: var(--ari-danger); font-size: .76rem; }
 .message-error p { margin: 0 0 5px; }
 @keyframes message-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
@@ -321,6 +322,8 @@ p { line-height: 1.55; }
 .export-note { font-size: .73rem; color: var(--ari-muted); margin-top: 16px; }
 .settings-export { margin-top: 24px; }
 .settings-form { width: min(650px, 100%); padding: 26px 30px; }
+.model-settings { margin-top: 24px; }
+.model-settings-note { color: var(--ari-muted); font-size: .85rem; margin: 0 0 18px; }
 .settings-form input, .settings-form textarea { display: block; }
 .settings-form input, .settings-form textarea, .settings-form .ui-select-trigger { margin-top: 7px; }
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

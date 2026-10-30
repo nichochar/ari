@@ -8,6 +8,7 @@ import { Select } from '../../components/ui/select';
 import { PersonalizationSettings } from '../../Personalization';
 import { useLearning } from '../../useLearning';
 import type { SettingsController } from './useSettings';
+import { ModelSettings } from './ModelSettings';
 type SettingsProps = {
   settings: SettingsController; learning: ReturnType<typeof useLearning>; memoryRevision: string;
   discuss: (text: string) => void; actionError: string;
@@ -29,6 +30,7 @@ export function Settings({ settings, learning, memoryRevision, discuss, actionEr
         {profileBusy ? 'Saving…' : 'Save preferences'}</Button>
       {profileMessage && <p className="status-line" role="status">{profileMessage}</p>}
     </Card>
+    <ModelSettings onSaved={learning.refresh} />
     {learning.data && <PersonalizationSettings data={learning.data.personalization} memoryRevision={memoryRevision} refresh={learning.refresh} discuss={discuss} />}
     <div className="settings-export">
       <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>

@@ -34,6 +34,7 @@ export interface LearningMaterial {
   url?: string; text: string; filename?: string; sourceData?: string;
 }
 export interface LearningRun {
+  activity?: 'compacting';
   id: string; requestId: string; status: 'queued' | 'running' | 'complete' | 'failed';
   kind: 'chat' | 'prepare' | 'review'; createdAt: string; updatedAt: string;
   messageId?: string; assistantMessageId?: string; lessonId?: string; proposalId?: string; assessmentId?: string; submissionId?: string; error?: string;

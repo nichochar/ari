@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import type { Response, ResponseInputItem, Tool } from 'openai/resources/responses/responses';
 import { toResponseInputItems } from 'openai/lib/responses/ResponseInputItems';
+import type { ModelOption, ReasoningEffort } from '../shared/model-settings.js';
+import type { ReasoningEffort as APIReasoningEffort } from 'openai/resources/shared';
 
 export interface LearningTool {
   type: 'function'; name: string; description: string;
@@ -18,11 +20,15 @@ export interface LearningAgentRequest {
   resumeText?: string;
   executeTool: (name: string, args: unknown, callId: string) => Promise<unknown>;
   onText?: (delta: string) => void | Promise<void>;
+  onCompaction?: (event: { status: 'started' | 'completed'; id?: string }) => void | Promise<void>;
   /** Full canonical input window, including completed outputs and tool results. */
   onCheckpoint?: (context: unknown[], inputTokens: number, completedText?: string) => void | Promise<void>;
 }
 export interface LearningAgentProvider {
   model: string;
+  managesCompaction?: boolean;
+  listModels?(): Promise<ModelOption[]>;
+  close?(): void;
   /** Actual context size when the provider owns an opaque conversation window. */
   contextTokens?(context: unknown[]): number | undefined;
   run(request: LearningAgentRequest): Promise<{ output: unknown[]; text: string; inputTokens: number; context?: unknown[] }>;
@@ -106,12 +112,24 @@ function structuredResponseText(output: unknown[]): string {
 /** Stateless Responses with durable input items; no implicit model/provider fallback. */
 export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
   client = apiKey ? new OpenAI({ apiKey, timeout: 180_000, maxRetries: 0 }) : undefined,
-  options: { model?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' } = {}): LearningAgentProvider | undefined {
+  options: { model?: string; reasoningEffort?: ReasoningEffort } = {}): LearningAgentProvider | undefined {
   if (!apiKey || !client) return undefined;
   const model = options.model ?? (process.env.OPENAI_MAIN_MODEL || 'gpt-6-astra');
-  const effort = options.reasoningEffort ?? 'high';
+  const effort = (options.reasoningEffort ?? 'high') as APIReasoningEffort;
   return {
     model: `${model} · ${effort}`,
+    async listModels() {
+      const available = new Set<string>();
+      for await (const model of client.models.list()) available.add(model.id);
+      const catalog: ModelOption[] = [
+        { id: 'gpt-6-astra', name: 'GPT-6 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' },
+        { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+        { id: 'gpt-6-luna', name: 'GPT-6 Luna', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+        { id: 'gpt-5.4', name: 'GPT-5.4', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+        { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+      ];
+      return catalog.filter(model => available.has(model.id));
+    },
     async run(request) {
       const context = structuredClone(request.input);
       const start = context.length;
@@ -167,12 +185,14 @@ export function createLearningProvider(apiKey = process.env.OPENAI_API_KEY,
           const instructions = await request.refreshInstructions?.() ?? request.instructions;
           if (round > 0 && texts.length) await request.onText?.('\n\n');
           if (inputTokens >= learningCompactionThreshold()) {
+            await request.onCompaction?.({ status: 'started' });
             const compacted = await client.responses.compact({ model, input: context as ResponseInputItem[], instructions });
             if (!compacted.output.some(output => output.type === 'compaction'))
               throw new LearningProviderError('COMPACTION_FAILED', 'Ari could not compact this conversation. Its full history is still saved.');
             context.splice(0, context.length, ...compacted.output);
             inputTokens = estimateTokens(context);
             await checkpoint();
+            await request.onCompaction?.({ status: 'completed' });
           }
           const stream = await client.responses.create({
             model, reasoning: { effort }, instructions,

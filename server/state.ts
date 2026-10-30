@@ -13,6 +13,8 @@ import { stateSchema, validateImage } from './schema.js';
 import { learningDataSchema } from './learning-schema.js';
 import { originalPrimerHashes } from './original-primer-hashes.js';
 import { repairLessonOrigins } from './learning-repairs.js';
+import { modelSelectionSchema } from './model-settings-schema.js';
+import type { ModelSelection } from '../shared/model-settings.js';
 
 const SCHEMA_VERSION = 4;
 export const ORIGINAL_CURRICULUM_ID = 'original-prepa';
@@ -160,6 +162,7 @@ export class StateStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS assessment_state (learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS learning_state (learner_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS model_settings (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS learning_lesson_revisions (
         learner_id TEXT NOT NULL, lesson_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
         PRIMARY KEY (learner_id, lesson_id, revision)
@@ -392,6 +395,16 @@ export class StateStore {
 
   async read(): Promise<AppState> {
     return this.transaction(() => this.loadState(), true);
+  }
+
+  readModelSelection(): ModelSelection | undefined {
+    const row = this.db.prepare('SELECT payload FROM model_settings WHERE id = 1').get() as { payload: string } | undefined;
+    return row ? modelSelectionSchema.parse(JSON.parse(row.payload)) : undefined;
+  }
+
+  saveModelSelection(selection: ModelSelection): void {
+    this.db.prepare('INSERT INTO model_settings (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload')
+      .run(JSON.stringify(modelSelectionSchema.parse(selection)));
   }
 
   async update<T>(mutate: (draft: AppState) => T): Promise<T> {

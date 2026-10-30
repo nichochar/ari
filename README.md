@@ -42,7 +42,10 @@ npm start
 
 Open **http://127.0.0.1:3001**.
 
-Models are configurable in `.env`; your account must have access to the selected models.
+Choose a model and reasoning effort in **Settings → Ari’s model**. The default is **GPT-6 Astra, High**. The choice is saved locally and applies to new requests across chats, lessons, grading and assessments. Running replies keep their current model. ChatGPT mode loads models and supported efforts from your Codex connection; API-key mode offers a compatible selection available to your API account. Existing provider/billing settings stay in `.env`.
+
+In ChatGPT/Codex mode, Codex automatically compacts long conversations using the selected model's default threshold. Ari keeps the full chat transcript separately. `LEARNING_COMPACTION_TOKENS` applies only to API-key mode.
+The chat shows “Compacting conversation…” while this happens, then continues the response.
 
 ## Make it yours
 

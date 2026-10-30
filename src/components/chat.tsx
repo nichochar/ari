@@ -37,8 +37,8 @@ export function ChatMessage({ author, createdAt, children, details, arriving = f
   </div>;
 }
 
-export function ChatWaiting({ label = 'Ari is thinking' }: { label?: string }) {
-  return <div className="tutor-waiting" role="status"><AriSun /><span className="sr-only">{label}</span></div>;
+export function ChatWaiting({ label = 'Ari is thinking', showLabel = false }: { label?: string; showLabel?: boolean }) {
+  return <div className="tutor-waiting" role="status"><AriSun /><span className={showLabel ? 'waiting-label' : 'sr-only'}>{label}</span></div>;
 }
 
 /** Shared compact, growing composer; context-specific actions remain explicit slots. */

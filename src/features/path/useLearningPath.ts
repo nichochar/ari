@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Difficulty, Exercise, LessonChatRequest, LessonSession } from '../../../shared/types';
 import { appStorage } from '../../storage';
 import { courseModules, type Study } from '../../app/useStudy';
@@ -12,7 +12,7 @@ export type OutgoingLessonMessage = {
 
 const moduleKey = 'ari:selectedModuleId';
 export function useLearningPath(study: Study, learning: ReturnType<typeof useLearning>, onSelectExercise: (id: string) => void, setActionError: (message: string) => void) {
-  const { state, setState, allModules, catalog } = study;
+  const { state, setState, allModules } = study;
   const [selectedModuleId, setSelectedModuleId] = useState(() => {
     const saved = appStorage.getItem(moduleKey);
     return saved || courseModules[0]?.id || '';

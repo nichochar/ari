@@ -56,17 +56,17 @@ export function DeskCameraDialog({ desk, nativeAvailable }: { desk: DeskControll
   const { cameraExpanded, setCameraExpanded, closeCameraRef, expandButtonRef, uploadedImage, camera } = desk;
   const { cameraPlaceholder, cameraControls } = deskCameraContent(desk, nativeAvailable);
   return <Dialog open={cameraExpanded} onOpenChange={setCameraExpanded}>
-      <DialogContent className="camera-stage camera-dialog" showCloseButton={false} initialFocus={closeCameraRef} finalFocus={expandButtonRef}>
-        <div className="expanded-toolbar"><DialogTitle>Paper view</DialogTitle>
-          <DialogClose ref={closeCameraRef} render={<Button variant="icon" />} aria-label="Close expanded view"><Minimize size={19} /></DialogClose>
-        </div>
-        <div className="camera-image-area">
-          {uploadedImage ? <img src={uploadedImage} alt="Uploaded work, enlarged" className="uploaded-preview" />
-            : camera.active ? <ExpandedDeskCamera camera={camera} /> : cameraPlaceholder}
-        </div>
-        {camera.active && !uploadedImage && <span className="live-label">{camera.deviceLabel} · local preview</span>}
-        <DialogDescription className="focus-tip">Adjust focus and exposure on the physical camera. Move the camera or paper to change the field of view.</DialogDescription>
-        {cameraControls}
-      </DialogContent>
-    </Dialog>;
+    <DialogContent className="camera-stage camera-dialog" showCloseButton={false} initialFocus={closeCameraRef} finalFocus={expandButtonRef}>
+      <div className="expanded-toolbar"><DialogTitle>Paper view</DialogTitle>
+        <DialogClose ref={closeCameraRef} render={<Button variant="icon" />} aria-label="Close expanded view"><Minimize size={19} /></DialogClose>
+      </div>
+      <div className="camera-image-area">
+        {uploadedImage ? <img src={uploadedImage} alt="Uploaded work, enlarged" className="uploaded-preview" />
+          : camera.active ? <ExpandedDeskCamera camera={camera} /> : cameraPlaceholder}
+      </div>
+      {camera.active && !uploadedImage && <span className="live-label">{camera.deviceLabel} · local preview</span>}
+      <DialogDescription className="focus-tip">Adjust focus and exposure on the physical camera. Move the camera or paper to change the field of view.</DialogDescription>
+      {cameraControls}
+    </DialogContent>
+  </Dialog>;
 }

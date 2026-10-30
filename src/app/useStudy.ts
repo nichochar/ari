@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { appStorage } from '../storage';
 import { diagnosticIds, exercises, modules } from '../../shared/curriculum';
 import type { AppState, Exercise, Health, Module } from '../../shared/types';

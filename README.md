@@ -67,6 +67,6 @@ Live camera preview stays local; deliberately submitted work and relevant learni
 
 Personalization backups also include a matching `.workspace` directory with `TUTOR.md`, `USER.md`, memories and the workspace identity marker. To restore, stop Ari and restore the SQLite file, its `.codex` companion when present, and its `.workspace` contents to their original locations. The workspace location is saved in the database; preserve its identity marker. If backup reports that notes differ from recorded revisions, open Settings to refresh those edits and retry.
 
-For development: `npm run dev` (UI on port 5173), `npm test`, and `npm run build`. The logo and brand rules are in [design/README.md](design/README.md).
+For development: `npm run dev` (UI on port 5173), `npm test`, and `npm run build`. See the [frontend module map](src/README.md) and [design rules](design/README.md).
 
 [MIT license](LICENSE).

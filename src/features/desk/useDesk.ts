@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject, Dispatch, SetStateAction } from 'react';
 import type { AppState, Exercise, ExercisePage, ReflectionResponse, Session, TutorRequest } from '../../../shared/types';
 import { MAX_EXERCISE_PAGES } from '../../../shared/types';
@@ -41,7 +41,6 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   const [cameraExpanded, setCameraExpanded] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeCameraRef = useRef<HTMLButtonElement>(null);
-  const closePhotoRef = useRef<HTMLButtonElement>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const shouldFollowConversation = useRef(true);

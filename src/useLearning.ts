@@ -1,14 +1,12 @@
 import { appStorage } from './storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LearningView, MainChatRequest } from '../shared/learning';
+import { requestJson } from './lib/api';
 
 export async function learningApi<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
-  const response = await fetch('/api/learning' + path, body === undefined ? undefined : {
-    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'Could not save this change. Try again.');
-  return result as T;
+  return requestJson<T>('/api/learning' + path, body === undefined ? undefined : {
+    method, body: JSON.stringify(body),
+  }, { fallbackError: 'Could not save this change. Try again.' });
 }
 export function learningError(error: unknown) { return error instanceof Error ? error.message : 'Request failed. Try again.'; }
 export type PendingMainMessage = { request: MainChatRequest; createdAt: string; status: 'sending' | 'failed'; error?: string };

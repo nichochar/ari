@@ -6,6 +6,7 @@ import type { AssessmentListView, AssessmentReview, AssessmentSummary, Assessmen
 import { Markdown } from './Markdown';
 import { useCamera } from './useCamera';
 import { appStorage } from './storage';
+import { errorText, requestJson } from './lib/api';
 import { PageHeader } from './components/page-header';
 import { ChatComposer, ChatMessage, ChatWaiting } from './components/chat';
 import { Alert } from './components/ui/alert';
@@ -19,14 +20,10 @@ import { AriMark } from './components/ui/ari-mark';
 import './assessments.css';
 
 async function assessmentApi<T>(path = '', body?: unknown, method = 'POST'): Promise<T> {
-  const response = await fetch('/api/assessments' + path, body === undefined ? { cache: 'no-store' } : {
-    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'Could not save this change. Try again.');
-  return result as T;
+  return requestJson<T>('/api/assessments' + path, body === undefined ? { cache: 'no-store' } : {
+    method, body: JSON.stringify(body),
+  }, { fallbackError: 'Could not save this change. Try again.' });
 }
-const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Try again.';
 const photoSource = (id: string) => id.startsWith('data:image/') ? id : '/api/snapshots/' + encodeURIComponent(id);
 const working = (view: AssessmentView) => ['planning', 'preparing', 'grading'].includes(view.status) || view.messages.some(message => message.status === 'pending');
 const statusText: Record<AssessmentView['status'], string> = { planning: 'Planning', proposed: 'Ready to prepare', preparing: 'Preparing paper', active: 'In progress', paused: 'Paused', grading: 'Reviewing', reviewed: 'Reviewed', failed: 'Needs attention' };

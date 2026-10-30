@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { appStorage } from './storage';
 import { AppShell } from './app/AppShell';
@@ -20,7 +20,6 @@ import { AriMark, AriSun } from './components/ui/ari-mark';
 import { useLearning } from './useLearning';
 import { MainConversation } from './Learning';
 import { Assessments } from './Assessments';
-import { useState } from 'react';
 
 export default function App() {
   const navigation = useNavigation();
@@ -101,21 +100,21 @@ export default function App() {
       nextExercise={nextExercise} nextLesson={nextLesson} tutorReady={!!study.health?.aiConfigured} nativeAvailable={study.nativeAvailable}
       generationBusy={path.generationBusy} generateExercise={path.generateExercise} selectExercise={selectExercise} showLesson={showLesson}
       openPhoto={photos.openPhoto} reviewStatus={journal.reviewStatus} reviewBusy={journal.reviewBusy} actionError={actionError} />}
-      {view === 'chat' && <section className="page">
-        {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
-          : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
-            {learning.error ? <AriMark size={40} /> : <AriSun size={72} />}
-            <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
-            {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
-          </div></>}
-        {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
-      </section>}
-      {view === 'assessments' && <section className="page">
-        {learning.data ? <Assessments curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={path.activeCurriculum?.id} />
-          : <><PageHeader title="Assessments" /><div className="loading-screen page-loading" role={learning.error ? 'alert' : 'status'}>
-            {learning.error ? <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
-          </div></>}
-      </section>}
+    {view === 'chat' && <section className="page">
+      {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
+        : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
+          {learning.error ? <AriMark size={40} /> : <AriSun size={72} />}
+          <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
+          {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
+        </div></>}
+      {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
+    </section>}
+    {view === 'assessments' && <section className="page">
+      {learning.data ? <Assessments curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={path.activeCurriculum?.id} />
+        : <><PageHeader title="Assessments" /><div className="loading-screen page-loading" role={learning.error ? 'alert' : 'status'}>
+          {learning.error ? <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
+        </div></>}
+    </section>}
     {view === 'path' && <LearningPath path={path} state={state} catalog={study.catalog} learning={learning}
       selectExercise={selectExercise} openCurriculum={openCurriculum} openChat={openChat} actionError={actionError} />}
     {view === 'journal' && <Journal journal={journal} state={state} catalog={study.catalog} allModules={study.allModules}

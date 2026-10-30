@@ -41,11 +41,11 @@ export function usePhotoViewer() {
 export function PhotoViewer({ viewer }: { viewer: ReturnType<typeof usePhotoViewer> }) {
   const { photoOpen, setPhotoOpen, photoOpenerRef, closePhotoRef } = viewer;
   return <Dialog open={!!photoOpen} onOpenChange={open => { if (!open) setPhotoOpen(null); }}>
-  <DialogContent className="photo-overlay" showCloseButton={false} initialFocus={closePhotoRef} finalFocus={photoOpenerRef}>
-        <DialogTitle className="sr-only">Submitted photo</DialogTitle>
-        <DialogDescription className="sr-only">An enlarged view of your saved paper.</DialogDescription>
-        <DialogClose ref={closePhotoRef} render={<Button variant="icon" className="photo-close" />} aria-label="Close photo"><X size={22} /></DialogClose>
-        {photoOpen && <img src={photoSource(photoOpen)} alt="Submitted paper, enlarged" />}
-      </DialogContent>
-    </Dialog>;
+    <DialogContent className="photo-overlay" showCloseButton={false} initialFocus={closePhotoRef} finalFocus={photoOpenerRef}>
+      <DialogTitle className="sr-only">Submitted photo</DialogTitle>
+      <DialogDescription className="sr-only">An enlarged view of your saved paper.</DialogDescription>
+      <DialogClose ref={closePhotoRef} render={<Button variant="icon" className="photo-close" />} aria-label="Close photo"><X size={22} /></DialogClose>
+      {photoOpen && <img src={photoSource(photoOpen)} alt="Submitted paper, enlarged" />}
+    </DialogContent>
+  </Dialog>;
 }

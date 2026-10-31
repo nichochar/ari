@@ -199,3 +199,15 @@ test('GFM tables retain semantic headers, alignment and inline LaTeX inside a sc
   assert.match(html, /<annotation encoding="application\/x-tex">\\frac\{2\}\{4\}<\/annotation>/);
   assert.doesNotMatch(html, /\| :---/);
 });
+
+test('plot fences render a placeholder holding the exact block, untouched by math normalization', () => {
+  const block = 'y = a x^2 { label: "$y$" }\na = 1 in [0, 4]';
+  const source = 'Try this:\n\n```plot\n' + block + '\n```\n\n```js\nconst $x = 1;\n```';
+  assert.equal(normalizeMathDelimiters(source), source);
+  const html = render(source);
+  const attribute = /data-plot-source="([^"]*)"/.exec(html)?.[1];
+  assert.equal(attribute?.replace(/&quot;/g, '"').replace(/&amp;/g, '&'), block);
+  assert.match(html, /class="plot-placeholder"/);
+  assert.match(html, /<pre><code class="language-js">const \$x = 1;\n<\/code><\/pre>/);
+  assert.equal(mathCount(html), 0);
+});

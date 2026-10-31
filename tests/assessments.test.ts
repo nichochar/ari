@@ -10,6 +10,7 @@ import { AssessmentError, AssessmentService } from '../server/assessment-service
 import type { LearningAgentRequest } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
 import type { AssessmentProblem } from '../shared/assessments.js';
+import { promptReference } from '@ari/plot';
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aC1sAAAAASUVORK5CYII=';
 const denied = (error: unknown) => error instanceof AssessmentError && error.status === 409;
@@ -78,6 +79,7 @@ test('chat attaches actual images, persists help and never grades; reload retrie
     await f.service().retryChat('assessment-1', 'message-1'); await f.service().settle();
     const view = await f.service().view('assessment-1');
     assert.equal(view.messages.length, 2); assert.equal(view.messages[1].help, 'hint');
+    assert.ok(f.calls.at(-1)!.instructions.includes(promptReference));
     const input = f.calls.at(-1)!.input as { content: { type: string; text?: string; image_url?: string }[] }[];
     assert.equal(input[0].content[1].type, 'input_image'); assert.equal(input[0].content[1].image_url, image);
     assert.equal(input[0].content[0].text?.includes('base64'), false);

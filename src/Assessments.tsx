@@ -10,6 +10,7 @@ import { appStorage } from './storage';
 import { errorText, requestJson } from './lib/api';
 import { PageHeader } from './components/page-header';
 import { ChatComposer, ChatMessage, ChatWaiting } from './components/chat';
+import { PlotAskContext, usePlotAsk } from './components/plot/ask';
 import { Alert } from './components/ui/alert';
 import { Button } from './components/ui/button';
 import { Checkbox } from './components/ui/checkbox';
@@ -254,6 +255,8 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
     });
   }
   const chatLog = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const askPlot = usePlotAsk({ setDraft, photos, focus: composerRef });
   const followChat = useRef(true);
   useEffect(() => {
     const log = chatLog.current;
@@ -309,9 +312,9 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
       </Card>}
       {view.status === 'paused' && <Alert>Your paper and work are saved. Resume when you are ready.</Alert>}
       {hasPaper && <div className="assessment-grid"><div className="assessment-main">
-        <Card as="article" className="assessment-paper"><div className="assessment-paper-heading"><h2>Assessment paper</h2><span>{view.problems.reduce((sum, problem) => sum + problem.points, 0)} points</span></div>
+        <PlotAskContext.Provider value={askPlot}><Card as="article" className="assessment-paper"><div className="assessment-paper-heading"><h2>Assessment paper</h2><span>{view.problems.reduce((sum, problem) => sum + problem.points, 0)} points</span></div>
           {view.problems.map((problem, index) => <section className="assessment-problem" key={problem.id}><div className="assessment-problem-heading"><h3>{index + 1}. {problem.title}</h3><span>{problem.points} points</span></div><Markdown>{problem.prompt}</Markdown></section>)}
-        </Card>
+        </Card></PlotAskContext.Provider>
         {!!reviews.length && selectedReview?.review && <Card as="section" className="assessment-review">
           <div className="assessment-review-heading"><h2>Review</h2><Select compact aria-label="Review submission" value={selectedReview.id} onValueChange={setReviewId}
             options={reviews.map((submission, index) => ({ value: submission.id, label: `Submission ${index + 1} · ${dateText(submission.createdAt)}` }))} /></div>
@@ -319,7 +322,7 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
           <details className="assessment-original"><summary>Submitted work</summary>{selectedReview.answer && <Markdown>{selectedReview.answer}</Markdown>}
             <div className="assessment-message-photos">{selectedReview.snapshotIds.map((snapshotId, index) => <Button key={snapshotId} variant="plain" onClick={() => setPhotoOpen({ source: photoSource(snapshotId), label: `Submitted page ${index + 1}` })}><img src={photoSource(snapshotId)} alt={`Submitted page ${index + 1}`} loading="lazy" /></Button>)}</div></details>
         </Card>}
-        <Card as="section" className="conversation-panel assessment-chat"><div className="panel-heading"><h2>Talk with Ari</h2></div>
+        <PlotAskContext.Provider value={askPlot}><Card as="section" className="conversation-panel assessment-chat"><div className="panel-heading"><h2>Talk with Ari</h2></div>
           <div ref={chatLog} className="assessment-chat-messages" role="log" aria-label="Assessment conversation" aria-live="polite"
             onScroll={event => { const log = event.currentTarget; followChat.current = log.scrollHeight - log.scrollTop - log.clientHeight < 100; }}>
             {!view.messages.length && !work.chat && <p className="assessment-muted">Ask about a problem or share your reasoning.</p>}
@@ -334,10 +337,10 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
             {failedReply && !work.chat && <Alert variant="destructive">{failedReply.error || 'Ari could not answer. Your message and photos are saved.'}
               {canRetryReply && failedUser ? <Button variant="outline" disabled={locked} onClick={() => void run('chat', () => mutate('/messages/' + encodeURIComponent(failedUser.id) + '/retry'))}>Retry reply</Button> : <span> Send a new message to continue.</span>}</Alert>}
           </div>
-          <ChatComposer photos={photos} camera={camera} photosDisabled={!canChat || locked || !!work.chat} value={draft} onChange={setDraft} onSend={() => void sendChat()} label="Assessment message" placeholder="Ask Ari about your work…" maxLength={4000}
+          <ChatComposer photos={photos} camera={camera} photosDisabled={!canChat || locked || !!work.chat} inputRef={composerRef} value={draft} onChange={setDraft} onSend={() => void sendChat()} label="Assessment message" placeholder="Ask Ari about your work…" maxLength={4000}
             sendDisabled={!canChat || locked || !!work.chat || (!draft.trim() && !work.photo && !camera.active && !photos.images.length)}
             beforeInput={!photos.images.length && (camera.active || work.photo) && <p className="composer-attachment"><Camera size={14} />Current photo included</p>} />
-        </Card>
+        </Card></PlotAskContext.Provider>
       </div><aside className="assessment-work">
         <Card as="section" className="camera-panel"><div className="panel-heading"><h2>Your work</h2><Button variant="icon" aria-label="Expand paper preview" onClick={() => setExpanded(true)}><Expand size={18} /></Button></div>
           <div className={'camera-stage ' + (camera.rotation % 180 ? 'portrait' : '')}><div className="camera-image-area">

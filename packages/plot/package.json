@@ -1,0 +1,38 @@
+{
+  "name": "@ari/plot",
+  "version": "0.1.0",
+  "description": "Interactive 2D and 3D math plots from a small text language, built for tutors and chat.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.tsx",
+    "./plot.css": "./src/plot.css",
+    "./prompt": "./src/prompt.ts"
+  },
+  "files": [
+    "src",
+    "LANGUAGE.md",
+    "README.md"
+  ],
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0"
+  },
+  "peerDependencies": {
+    "katex": ">=0.16",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "katex": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  }
+}

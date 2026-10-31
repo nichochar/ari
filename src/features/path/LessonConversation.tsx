@@ -10,6 +10,7 @@ import { AriIcon } from '../../components/ui/ari-mark';
 import { ChatComposer, ChatMessage, ChatWaiting } from '../../components/chat';
 import { Markdown } from '../../Markdown';
 import { TutorBubble } from '../../components/study/TutorBubble';
+import { PlotAskContext, usePlotAsk } from '../../components/plot/ask';
 export function LessonConversation({ moduleId, sessions, outgoing, draft, onDraft, onSend, onRetry }: {
   moduleId: string; sessions: LessonSession[]; outgoing: OutgoingLessonMessage[]; draft: string;
   onDraft: (value: string) => void; onSend: (images: string[]) => boolean;
@@ -19,6 +20,8 @@ export function LessonConversation({ moduleId, sessions, outgoing, draft, onDraf
   const viewer = usePhotoViewer();
   const paneRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const askPlot = usePlotAsk({ setDraft: update => onDraft(update(draft)), photos, focus: composerRef });
   const latestOutgoing = outgoing.at(-1)?.id;
   const entries = [
     ...sessions.map(session => ({ id: session.id, createdAt: session.createdAt, session, outgoing: undefined })),
@@ -31,7 +34,7 @@ export function LessonConversation({ moduleId, sessions, outgoing, draft, onDraf
     if (pane && followRef.current) pane.scrollTop = pane.scrollHeight;
   }, [sessions, outgoing]);
   const pending = outgoing.length > 0;
-  return <Card className="conversation-panel lesson-conversation">
+  return <PlotAskContext.Provider value={askPlot}><Card className="conversation-panel lesson-conversation">
     <div className="conversation" ref={paneRef} role="log" aria-label="Lesson conversation" aria-live="polite" aria-relevant="additions text"
       onScroll={event => { const node = event.currentTarget; followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
       {entries.length ? entries.map(entry => <div className={'exchange ' + (entry.outgoing ? 'outgoing-exchange' : '')} key={entry.id}>
@@ -46,8 +49,8 @@ export function LessonConversation({ moduleId, sessions, outgoing, draft, onDraf
       </div>) : <div className="conversation-empty"><AriIcon size={20} /><p>Ask about this lesson.</p></div>}
     </div>
     <ChatComposer value={draft} onChange={onDraft} onSend={() => { if (onSend(photos.images)) photos.clear(); }} sendDisabled={pending || (!draft.trim() && !photos.images.length)}
-      photos={photos} photosDisabled={pending}
+      photos={photos} photosDisabled={pending} inputRef={composerRef}
       label="Question about this lesson" placeholder="What would you like to understand?" maxLength={4000} />
     <PhotoViewer viewer={viewer} />
-  </Card>;
+  </Card></PlotAskContext.Provider>;
 }

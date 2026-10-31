@@ -10,6 +10,7 @@ import { StateStore } from '../server/state.js';
 import { LearningService } from '../server/learning-service.js';
 import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
 import type { AIAsk } from '../server/ai.js';
+import { promptReference } from '@ari/plot';
 import { exercises } from '../shared/curriculum.js';
 import { fixtureLearningProvider, historyProposal, preparedLesson, toolReply } from './fixtures/learning.js';
 
@@ -113,6 +114,7 @@ test('provider-managed compaction bypasses the app threshold and preserves the t
       if (runs === 2) assert.deepEqual(request.input[0], checkpoint);
       assert.match(request.instructions, /TUTOR\.md/);
       assert.match(request.instructions, /USER\.md/);
+      assert.ok(request.instructions.includes(promptReference));
       const context = [checkpoint];
       const inputTokens = runs === 1 ? 250000 : 20000;
       const text = `Answer ${runs}`;

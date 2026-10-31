@@ -8,7 +8,8 @@ import { exercises, modules } from '../shared/curriculum.js';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/app.js';
 import { StateStore } from '../server/state.js';
-import { normalizeGeneratedMath, type AIAsk } from '../server/ai.js';
+import { generateInstructions, lessonInstructions, normalizeGeneratedMath, tutorInstructions, type AIAsk } from '../server/ai.js';
+import { promptReference } from '@ari/plot';
 import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
 
@@ -237,6 +238,10 @@ test('generated math fixes doubled commands while preserving matrix row breaks',
   const matrix = '$' + slash + 'begin{pmatrix}a&b' + slash.repeat(2) + 'c&d' + slash + 'end{pmatrix}$';
   const fixed = normalizeGeneratedMath({ ...exercises[0], prompt: `${doubled} and ${matrix}` });
   assert.equal(fixed.prompt, `$t${slash}geq0$ and ${matrix}`);
+});
+
+test('desk, lesson and exercise instructions describe plot blocks', () => {
+  for (const instructions of [tutorInstructions('chat'), tutorInstructions('check'), lessonInstructions, generateInstructions]) assert.ok(instructions.includes(promptReference));
 });
 
 test('image and origin validation and disabled AI', async () => {

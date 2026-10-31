@@ -1,6 +1,6 @@
 # ARI
 
-Personal tutor for any subject. Read README.md for setup and architecture, shared/types.ts for desk contracts, and shared/learning.ts for conversations/curricula.
+Personal tutor for any subject. Read README.md for setup and architecture, shared/types.ts for desk contracts, and shared/learning.ts for conversations/curricula. Interactive graphs come from the separate package in packages/plot (see its README.md and LANGUAGE.md); it is published on its own, so it imports nothing from the app and keeps its own tokens and tests.
 
 Use mature, encouraging language. Adapt to the learner’s goals and starting level. Keep hints useful without doing the work for them. Curriculum creation and major changes need a deliberate learner action. Preserve full transcripts, editable learner memory, historical revisions and native compaction. Do not silently change model or billing provider.
 

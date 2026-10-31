@@ -17,6 +17,7 @@ import { FileUpload } from './components/ui/file-upload';
 import { AriMark, AriSun } from './components/ui/ari-mark';
 import { learningApi, learningError, type PendingMainMessage } from './useLearning';
 import { OnboardingConversation } from './Personalization';
+import { PlotAskContext, usePlotAsk } from './components/plot/ask';
 
 function ToolActivity({ data, runId, running }: { data: LearningView; runId?: string; running: boolean }) {
   const steps = (data.events || []).filter(event => event.runId === runId && event.type === 'tool_call');
@@ -77,6 +78,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
   useEffect(() => { if (pane.current && follow.current) pane.current.scrollTop = pane.current.scrollHeight; }, [data.messages, pending, data.proposals]);
   const busy = pending.some(item => item.status === 'sending') || data.runs.some(run => run.kind === 'chat' && (run.status === 'running' || run.status === 'queued'));
   const onboarding = data.personalization?.onboarding.status === 'new';
+  const askPlot = usePlotAsk({ setDraft, photos, focus: textarea });
   function discuss(text: string) { setDraft(current => current.trim() ? current.trimEnd() + '\n\n' + text : text); textarea.current?.focus(); }
   function send() {
     if ((!draft.trim() && !photos.images.length) || photos.busy || busy || pending.length) return;
@@ -95,7 +97,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
       !onboarding && <div className="focus-select"><label htmlFor="conversation-focus">Conversation focus</label><Select id="conversation-focus" value={focusId} onValueChange={setFocusId} options={[{ value: '', label: 'Any subject' }, ...data.curricula.map(item => ({ value: item.id, label: item.title }))]} /></div>
     } />
     {onboarding && <OnboardingConversation data={data.personalization} refresh={refresh} discuss={discuss} hasAnswer={data.messages.some(message => message.role === 'user')} disabled={busy || pending.length > 0} />}
-    <Card className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
+    <PlotAskContext.Provider value={askPlot}><Card className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="outline" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
@@ -131,7 +133,7 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
         </MenuGroup></>}>
         {!data.provider.configured && <p className="provider-note">The main tutor is not configured. Your existing lessons and practice remain available.</p>}
       </ChatComposer>
-    </Card>
+    </Card></PlotAskContext.Provider>
     <PhotoViewer viewer={viewer} />
     {!onboarding && <Materials data={data} refresh={refresh} />}
   </div>;

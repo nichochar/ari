@@ -34,3 +34,6 @@ chatgpt-auth.json
 *.workspace/
 
 audit/
+
+# Experiments and research notes stay out of the repository.
+/scratch/

@@ -1,0 +1,22 @@
+:is(.plot-inline, .plot-expanded), :is(.plot-inline, .plot-expanded) .plot-root {
+  --plot-bg: var(--ari-surface);
+  --plot-fg: var(--ari-text);
+  --plot-grid: color-mix(in srgb, var(--ari-text) 14%, var(--ari-surface));
+  --plot-grid-minor: color-mix(in srgb, var(--ari-text) 6%, var(--ari-surface));
+  --plot-axis: color-mix(in srgb, var(--ari-text) 55%, var(--ari-surface));
+  --plot-label: var(--ari-muted);
+  --plot-border: var(--ari-border);
+  --plot-accent: var(--ari-accent);
+  --plot-danger: var(--ari-danger);
+  --plot-radius: var(--ari-radius-surface);
+  --plot-series-1: #2f62a8;
+  --plot-series-2: #b9412f;
+  --plot-series-3: #3d7a4f;
+  --plot-series-4: #76509c;
+  --plot-series-5: #c8622a;
+  --plot-series-6: #176b76;
+  --plot-series-7: #b4466f;
+  --plot-series-8: #9c7418;
+  --plot-surface-light: var(--ari-surface);
+}
+.plot-dialog.ui-dialog-content { width: min(1100px, calc(100vw - 32px)); padding-top: 52px; }

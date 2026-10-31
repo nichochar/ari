@@ -118,6 +118,9 @@ p { line-height: 1.55; }
 .markdown th, .markdown td { min-width: 6rem; padding: .45rem .65rem; border: 1px solid var(--ari-border); vertical-align: top; }
 .markdown th { background: var(--ari-bg); font-weight: 600; }
 .markdown tbody tr:nth-child(even) { background: var(--ari-subtle); }
+.markdown .plot-block { margin: .85rem 0; }
+.plot-placeholder { height: 320px; border-radius: var(--ari-radius-control); background: var(--ari-subtle); }
+.chat-message:has(.plot-block) { width: 100%; }
 .reflection-card { padding: 20px 22px; }
 .next-actions { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--ari-border); }
 .next-learning-action { min-width: 0; max-width: 100%; }

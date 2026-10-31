@@ -56,6 +56,8 @@ The chat shows “Compacting conversation…” while this happens, then continu
 
 New learners start with a brief conversation.
 
+Ari can draw interactive 2D and 3D graphs in its replies, lessons and exercises. Drag sliders or edit the expressions, then ask Ari about your changes: it receives your version of the graph and a picture of the view.
+
 I used a TUTOR.md for Ari's personality and a USER.md for how it learns about you. These evolve automatically but you can edit them directly or by chatting with Ari.
 
 Want to try onboarding without resetting your progress? Run `npm run onboarding` for a separate fresh learner on port 3002. Stop that preview with `PORT=3002 npm run stop`.

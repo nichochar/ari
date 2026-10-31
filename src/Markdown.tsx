@@ -1,5 +1,5 @@
-import { memo, useEffect, useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from 'react';
+import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
@@ -7,6 +7,16 @@ import type { PersonalizationRead } from '../shared/personalization';
 import { Button } from './components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { learningApi, learningError } from './useLearning';
+
+const PlotBlock = lazy(() => import('./components/plot/PlotBlock'));
+
+function plotSource(node: ExtraProps['node']): string | null {
+  const code = node?.children[0];
+  if (code?.type !== 'element' || code.tagName !== 'code') return null;
+  const classes = code.properties.className;
+  if (!Array.isArray(classes) || !classes.includes('language-plot')) return null;
+  return code.children.map(child => child.type === 'text' ? child.value : '').join('').replace(/\n$/, '');
+}
 
 /** Match the workspace's public relative-path rules without resolving arbitrary URLs. */
 export function workspaceDocumentPath(href: string | undefined): string | null {
@@ -160,6 +170,12 @@ export const Markdown = memo(function Markdown({ children, workspaceLinks = true
         // A note's own workspace references stay text, preventing nested dialogs
         // and accidental navigation while reading the original reference.
         return workspaceLinks ? <WorkspaceDocumentLink path={path} title={title}>{children}</WorkspaceDocumentLink> : <span title={path}>{children}</span>;
+      },
+      pre: ({ node, ...props }) => {
+        const source = plotSource(node);
+        return source === null ? <pre {...props} /> : <div className="plot-block" data-plot-source={source}>
+          <Suspense fallback={<div className="plot-placeholder" />}><PlotBlock source={source} /></Suspense>
+        </div>;
       },
       table: ({ children }) => <div className="markdown-table" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
     }}

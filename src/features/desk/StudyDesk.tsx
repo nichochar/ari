@@ -16,6 +16,7 @@ import { TutorBubble } from '../../components/study/TutorBubble';
 import { deskCameraContent } from './DeskCamera';
 import { ConfidenceRating } from './ConfidenceRating';
 import type { DeskController } from './useDesk';
+import { PlotAskContext, usePlotAsk } from '../../components/plot/ask';
 type StudyDeskProps = {
   desk: DeskController; exercise: Exercise; currentModule?: Module; nextExercise?: Exercise; nextLesson?: Module;
   tutorReady: boolean; nativeAvailable: boolean; generationBusy: boolean;
@@ -31,7 +32,8 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
     setCameraExpanded, expandButtonRef, conversationRef, composerRef, shouldFollowConversation,
     camera, pageAttachedToPendingMessage, addPage, removePage, send, deliverMessage, onUpload, saveReflection } = desk;
   const { cameraPlaceholder, cameraControls } = deskCameraContent(desk, nativeAvailable);
-  return <section className="page desk-page">
+  const askPlot = usePlotAsk({ setDraft, photos, focus: composerRef });
+  return <PlotAskContext.Provider value={askPlot}><section className="page desk-page">
     <PageHeader title={exercise.title} actions={
       <span className={'tutor-status ' + (tutorReady ? 'ready' : '')}>{tutorReady ? 'Tutor ready' : 'Tutor unavailable'}</span>
     } />
@@ -178,5 +180,5 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
       </div>
     </div>
     {actionError && <p className="page-error" role="alert">{actionError}</p>}
-  </section>;
+  </section></PlotAskContext.Provider>;
 }

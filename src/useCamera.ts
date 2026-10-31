@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { appStorage } from './storage';
 import { readCameraPreferences, saveCameraPreferences } from './cameraPreferences';
 import { browserFrameReady, browserStreamLive, cameraCancelled, cameraOperation, nativeFrameReady, waitForCamera } from './cameraReadiness';
 
@@ -8,6 +9,8 @@ type CameraStatus = { available: boolean; running: boolean; label?: string; erro
 export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const nativeImageRef = useRef<HTMLImageElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewImageRef = useRef<HTMLImageElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestIdRef = useRef(0);
   const nativeStopRef = useRef<Promise<unknown> | null>(null);
@@ -42,7 +45,7 @@ export function useCamera() {
     pending?.controller.abort();
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    for (const video of [videoRef.current, previewVideoRef.current]) if (video) video.srcObject = null;
     if (modeRef.current === 'native' || pending?.mode === 'native') nativeStopRef.current = fetch('/api/camera/stop', { method: 'POST', keepalive: true }).catch(() => undefined);
     if (nativeFrameUrlRef.current) URL.revokeObjectURL(nativeFrameUrlRef.current);
     nativeFrameUrlRef.current = null;
@@ -52,6 +55,11 @@ export function useCamera() {
     setStarting(false);
     modeRef.current = null;
     setMode(null);
+  }, []);
+
+  const setPreviewVideo = useCallback((video: HTMLVideoElement | null) => {
+    previewVideoRef.current = video;
+    if (video && streamRef.current) { video.srcObject = streamRef.current; void video.play().catch(() => undefined); }
   }, []);
 
   const refreshDevices = useCallback(async () => {
@@ -107,6 +115,7 @@ export function useCamera() {
         setDeviceLabel(found.find(device => device.deviceId === actualId)?.label || track.label || 'Browser camera');
       }
       check();
+      appStorage.setItem('ari:cameraSource', JSON.stringify({ mode: kind, deviceId: streamRef.current?.getVideoTracks()[0]?.getSettings().deviceId }));
       modeRef.current = kind;
       setMode(kind);
       setActive(true);
@@ -151,10 +160,19 @@ export function useCamera() {
     await beginStart('native').catch(() => undefined);
   }, [beginStart]);
 
+  const startPreferred = useCallback(async (nativeAvailable: boolean) => {
+    let saved: { mode?: string; deviceId?: string } = {};
+    try { saved = JSON.parse(appStorage.getItem('ari:cameraSource') || '{}'); } catch {}
+    await beginStart(saved?.mode === 'browser' || !nativeAvailable ? 'browser' : 'native', saved?.deviceId).catch(() => undefined);
+  }, [beginStart]);
+
   useEffect(() => {
-    if (mode !== 'browser' || !active || !videoRef.current || videoRef.current.srcObject === streamRef.current) return;
-    videoRef.current.srcObject = streamRef.current;
-    void videoRef.current.play().catch(() => setError('Camera preview could not play. Try restarting the camera.'));
+    if (mode !== 'browser' || !active) return;
+    for (const video of [videoRef.current, previewVideoRef.current]) {
+      if (!video || video.srcObject === streamRef.current) continue;
+      video.srcObject = streamRef.current;
+      void video.play().catch(() => setError('Camera preview could not play. Try restarting the camera.'));
+    }
   });
 
   useEffect(() => {
@@ -218,12 +236,12 @@ export function useCamera() {
   }, [mode]);
 
   const source = useCallback(() => {
-    if (modeRef.current === 'browser' && browserFrameReady(videoRef.current, streamRef.current)) {
-      const video = videoRef.current!;
+    const video = [videoRef.current, previewVideoRef.current].find(node => browserFrameReady(node, streamRef.current));
+    if (modeRef.current === 'browser' && video) {
       return { element: video, width: video.videoWidth, height: video.videoHeight };
     }
-    if (modeRef.current === 'native' && nativeFrameReady(nativeImageRef.current, nativeFrameUrlRef.current, nativeFrameFetchedAtRef.current)) {
-      const image = nativeImageRef.current!;
+    const image = [nativeImageRef.current, previewImageRef.current].find(node => nativeFrameReady(node, nativeFrameUrlRef.current, nativeFrameFetchedAtRef.current));
+    if (modeRef.current === 'native' && image) {
       return { element: image, width: image.naturalWidth, height: image.naturalHeight };
     }
     return null;
@@ -283,5 +301,5 @@ export function useCamera() {
   }, [stop]);
   useEffect(() => () => stop(), [stop]);
 
-  return { videoRef, nativeImageRef, nativeFrameUrl, devices, deviceId, deviceLabel, mode, active, starting, error, dismissError, rotation, mirrored, start, startNative, stop, capture, captureWhenReady, setRotation, setMirrored };
+  return { videoRef, nativeImageRef, setPreviewVideo, previewImageRef, nativeFrameUrl, devices, deviceId, deviceLabel, mode, active, starting, error, dismissError, rotation, mirrored, start, startNative, startPreferred, stop, capture, captureWhenReady, setRotation, setMirrored };
 }

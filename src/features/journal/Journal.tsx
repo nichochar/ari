@@ -74,7 +74,7 @@ export function Journal({ journal, state, catalog, allModules, selectExercise, s
           return <article className="journal-entry" key={session.id}>
             <Button variant="plain" className="entry-title" onClick={() => showLesson(session.moduleId)}>{linked?.title || session.moduleId} <ArrowRight size={15} /></Button>
             <div className="exchange journal-conversation">
-              <ChatMessage author="user" createdAt={session.createdAt}><Markdown>{session.requestText}</Markdown></ChatMessage>
+              <ChatMessage author="user" createdAt={session.createdAt}><Markdown>{session.requestText}</Markdown><PhotoSet ids={session.snapshotIds || []} label="Message photo" onOpen={openPhoto} /></ChatMessage>
               <TutorBubble response={session.response} createdAt={session.createdAt} />
             </div>
           </article>;

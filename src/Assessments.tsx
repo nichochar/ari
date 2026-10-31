@@ -1,3 +1,4 @@
+import { useChatPhotos } from './components/photos/useChatPhotos';
 import { Card } from './components/ui/card';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Camera, Expand, Pause, Play, Plus, RefreshCw, RotateCw, Upload, X } from 'lucide-react';
@@ -29,7 +30,7 @@ const working = (view: AssessmentView) => ['planning', 'preparing', 'grading'].i
 const statusText: Record<AssessmentView['status'], string> = { planning: 'Planning', proposed: 'Ready to prepare', preparing: 'Preparing paper', active: 'In progress', paused: 'Paused', grading: 'Reviewing', reviewed: 'Reviewed', failed: 'Needs attention' };
 const dateText = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 type ScopeDraft = { lessonIds: string[]; minutes: number; instructions: string };
-type ChatRequest = { id: string; message: string; answer?: string; image?: string };
+type ChatRequest = { id: string; message: string; answer?: string; image?: string; images?: string[] };
 type SubmitRequest = { id: string; answer: string; image?: string };
 type PageRequest = { id: string; image: string };
 type Pending<T> = { body: T; error?: string; createdAt: string };
@@ -84,7 +85,7 @@ export function Assessments({ curricula, lessons, initialCurriculumId }: {
         {list.assessments.map(item => <AssessmentHistoryItem key={item.id} item={item} curriculum={curricula.find(curriculum => curriculum.id === item.curriculumId)} onOpen={() => setSelectedId(item.id)} />)}
       </div> : <div className="assessment-empty"><AriMark size={44} /><h2>A fresh paper, at your pace</h2>
         <p>{curricula.length ? 'Choose a curriculum to put your learning into practice.' : 'Create a curriculum and prepare a lesson to begin.'}</p>
-        {!!curricula.length && <Button variant="secondary" onClick={() => setNewOpen(true)}>New assessment</Button>}</div>}
+        {!!curricula.length && <Button variant="outline" onClick={() => setNewOpen(true)}>New assessment</Button>}</div>}
     </>}
     <Dialog open={newOpen} onOpenChange={open => { if (!creating) setNewOpen(open); }}><DialogContent className="assessment-new-dialog">
       <DialogTitle>New assessment</DialogTitle><DialogDescription>Choose a curriculum. Ari will suggest a mix of topics from its prepared lessons.</DialogDescription>
@@ -105,7 +106,7 @@ function AssessmentHistoryItem({ item, curriculum, onOpen }: { item: AssessmentS
     <h2>{item.title}</h2><p>{statusText[item.status]} · {item.minutes} min suggested{item.problemCount ? ` · ${item.problemCount} problems` : ''}
       {item.latestMaxScore !== null && ` · ${item.latestScore === null ? 'Not scored' : item.latestScore} / ${item.latestMaxScore}`}</p>
     {item.error && <p className="inline-error">{item.error}</p>}</div>
-    <Button variant="secondary" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></Card>;
+    <Button variant="outline" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></Card>;
 }
 
 function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
@@ -119,6 +120,7 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
   const captureController = useRef<AbortController | null>(null);
   const uploadVersion = useRef(0);
   const [scope, setScope] = useState<ScopeDraft | null>(() => readDraft<ScopeDraft | null>('ari:assessment:scope:' + id, null));
+  const photos = useChatPhotos('assessment:' + id);
   const [draft, setDraft] = useState(() => readDraft<string>('ari:assessment:chat:' + id, ''));
   const [answer, setAnswer] = useState<string | null>(() => readDraft<string | null>('ari:assessment:answer:' + id, null));
   const [work, setWork] = useState<LocalWork>(() => {
@@ -215,15 +217,15 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
     });
   }
   async function sendChat() {
-    if (!view || (!draft.trim() && !workRef.current.photo && !camera.active) || workRef.current.chat) return;
+    if (!view || photos.busy || (!draft.trim() && !workRef.current.photo && !camera.active && !photos.images.length) || workRef.current.chat) return;
     const text = draft.trim();
-    let image = workRef.current.photo?.image;
-    if (!image && camera.active) {
+    let image = photos.images.length ? undefined : workRef.current.photo?.image;
+    if (!photos.images.length && !image && camera.active) {
       image = camera.capture() || undefined;
       if (!image) { setError('The camera picture is not ready. Wait for your paper to appear, or stop the camera to send text only.'); return; }
     }
-    const pending: Pending<ChatRequest> = { body: { id: crypto.randomUUID(), message: text || 'Here is my work so far.', answer: answer || '', ...(image ? { image } : {}) }, createdAt: new Date().toISOString() };
-    changeWork({ chat: pending }); setDraft('');
+    const pending: Pending<ChatRequest> = { body: { id: crypto.randomUUID(), message: text || 'Here is my work so far.', answer: answer || '', ...(image ? { image } : {}), ...(photos.images.length ? { images: photos.images } : {}) }, createdAt: new Date().toISOString() };
+    changeWork({ chat: pending }); setDraft(''); photos.clear();
     await deliverChat(pending);
   }
   async function deliverChat(pending: Pending<ChatRequest>) {
@@ -285,12 +287,12 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
     <div className="assessment-back"><Button variant="ghost" onClick={onBack}><ArrowLeft size={15} />Assessments</Button></div>
     <PageHeader title={view?.title || 'Assessment'} description={view ? curricula.find(item => item.id === view.curriculumId)?.title : undefined}
       actions={view && <>{hasPaper && <span className="assessment-status">{statusText[view.status]} · {view.minutes} min suggested</span>}
-        {view.status === 'active' && <Button variant="secondary" disabled={locked} onClick={() => void run('pause', async () => { await mutate('', { answer: answer || '' }, 'PATCH'); await mutate('/pause'); })}><Pause size={15} />Pause</Button>}
-        {(view.status === 'paused' || view.status === 'reviewed') && <Button variant="secondary" disabled={locked} onClick={() => void run('resume', () => mutate('/resume'))}><Play size={15} />{view.status === 'reviewed' ? 'Revise answers' : 'Resume'}</Button>}</>} />
+        {view.status === 'active' && <Button variant="outline" disabled={locked} onClick={() => void run('pause', async () => { await mutate('', { answer: answer || '' }, 'PATCH'); await mutate('/pause'); })}><Pause size={15} />Pause</Button>}
+        {(view.status === 'paused' || view.status === 'reviewed') && <Button variant="outline" disabled={locked} onClick={() => void run('resume', () => mutate('/resume'))}><Play size={15} />{view.status === 'reviewed' ? 'Revise answers' : 'Resume'}</Button>}</>} />
     {error && <Alert variant="destructive" onDismiss={() => setError('')}>{error}{!view && <Button variant="ghost" onClick={() => { setError(''); void refresh(); }}>Retry loading</Button>}</Alert>}
     {!view ? !error && <ChatWaiting label="Loading assessment" /> : <>
       {view.status === 'failed' && <Alert variant="destructive">{view.error || 'Ari could not finish this step. Your work is saved.'}
-        <Button variant="secondary" loading={busy === 'retry'} disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Try again</Button></Alert>}
+        <Button variant="outline" loading={busy === 'retry'} disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Try again</Button></Alert>}
       {['planning', 'preparing'].includes(view.status) && <div className="assessment-progress"><ChatWaiting label={view.status === 'planning' ? 'Ari is suggesting topics' : 'Ari is preparing your paper'} />
         <p>{view.status === 'planning' ? 'Ari is suggesting a mix of topics…' : 'Ari is preparing your paper…'}</p></div>}
       {view.status === 'proposed' && scope && <Card className="assessment-proposal">
@@ -326,15 +328,15 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
               {!!message.snapshotIds.length && <div className="assessment-message-photos">{message.snapshotIds.map((snapshotId, index) => <Button key={snapshotId} variant="plain" onClick={() => setPhotoOpen({ source: photoSource(snapshotId), label: `Message photo ${index + 1}` })}><img src={photoSource(snapshotId)} alt={`Message photo ${index + 1}`} loading="lazy" /></Button>)}</div>}
             </ChatMessage>)}
             {work.chat && !chatPendingSaved && <ChatMessage author="user" createdAt={work.chat.createdAt}>{work.chat.body.message && <Markdown>{work.chat.body.message}</Markdown>}
-              {work.chat.body.image && <div className="assessment-message-photos"><img src={work.chat.body.image} alt="Photo attached to your message" /></div>}</ChatMessage>}
+              <div className="assessment-message-photos">{[...(work.chat.body.images || []), ...(work.chat.body.image ? [work.chat.body.image] : [])].map((image, index) => <img key={index} src={image} alt={`Attached photo ${index + 1}`} />)}</div></ChatMessage>}
             {(busy === 'chat' || view.messages.some(message => message.status === 'pending')) && <ChatWaiting />}
-            {work.chat?.error && <Alert variant="destructive">{work.chat.error}<Button variant="secondary" disabled={locked} onClick={() => void deliverChat(work.chat!)}>Retry this message</Button></Alert>}
+            {work.chat?.error && <Alert variant="destructive">{work.chat.error}<Button variant="outline" disabled={locked} onClick={() => void deliverChat(work.chat!)}>Retry this message</Button></Alert>}
             {failedReply && !work.chat && <Alert variant="destructive">{failedReply.error || 'Ari could not answer. Your message and photos are saved.'}
-              {canRetryReply && failedUser ? <Button variant="secondary" disabled={locked} onClick={() => void run('chat', () => mutate('/messages/' + encodeURIComponent(failedUser.id) + '/retry'))}>Retry reply</Button> : <span> Send a new message to continue.</span>}</Alert>}
+              {canRetryReply && failedUser ? <Button variant="outline" disabled={locked} onClick={() => void run('chat', () => mutate('/messages/' + encodeURIComponent(failedUser.id) + '/retry'))}>Retry reply</Button> : <span> Send a new message to continue.</span>}</Alert>}
           </div>
-          <ChatComposer value={draft} onChange={setDraft} onSend={() => void sendChat()} label="Assessment message" placeholder="Ask Ari about your work…" maxLength={4000}
-            sendDisabled={!canChat || locked || !!work.chat || (!draft.trim() && !work.photo && !camera.active)}
-            beforeInput={(camera.active || work.photo) && <p className="composer-attachment"><Camera size={14} />Current photo included</p>} />
+          <ChatComposer photos={photos} camera={camera} photosDisabled={!canChat || locked || !!work.chat} value={draft} onChange={setDraft} onSend={() => void sendChat()} label="Assessment message" placeholder="Ask Ari about your work…" maxLength={4000}
+            sendDisabled={!canChat || locked || !!work.chat || (!draft.trim() && !work.photo && !camera.active && !photos.images.length)}
+            beforeInput={!photos.images.length && (camera.active || work.photo) && <p className="composer-attachment"><Camera size={14} />Current photo included</p>} />
         </Card>
       </div><aside className="assessment-work">
         <Card as="section" className="camera-panel"><div className="panel-heading"><h2>Your work</h2><Button variant="icon" aria-label="Expand paper preview" onClick={() => setExpanded(true)}><Expand size={18} /></Button></div>
@@ -342,8 +344,8 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
             {work.photo ? <img className="uploaded-preview" src={work.photo.image} alt="Current uploaded work" /> : camera.active ? <div className={'video-frame ' + (camera.rotation % 180 ? 'sideways' : '')}>
               {camera.mode === 'native' ? camera.nativeFrameUrl ? <img ref={camera.nativeImageRef} src={camera.nativeFrameUrl} alt="Live IPEVO paper preview" style={cameraTransform} /> : <ChatWaiting label="Connecting camera" />
                 : <video ref={camera.videoRef} autoPlay muted playsInline style={cameraTransform} />}</div>
-              : <div className="camera-placeholder"><Camera size={28} /><strong>Show your paper</strong><div>{nativeAvailable && <Button variant="secondary" loading={camera.starting} disabled={locked || camera.starting} onClick={() => void camera.startNative()}>Use IPEVO</Button>}
-                <Button variant="secondary" disabled={locked || camera.starting} loading={camera.starting && !nativeAvailable} onClick={() => void camera.start()}>Use camera</Button></div></div>}
+              : <div className="camera-placeholder"><Camera size={28} /><strong>Show your paper</strong><div>{nativeAvailable && <Button variant="outline" loading={camera.starting} disabled={locked || camera.starting} onClick={() => void camera.startNative()}>Use IPEVO</Button>}
+                <Button variant="outline" disabled={locked || camera.starting} loading={camera.starting && !nativeAvailable} onClick={() => void camera.start()}>Use camera</Button></div></div>}
           </div>{camera.active && !work.photo && <div className="camera-controls">
             {camera.mode === 'browser' && !!camera.devices.length && <Select compact aria-label="Camera device" value={camera.deviceId} disabled={locked} onValueChange={value => void camera.start(value)} options={camera.devices.map(device => ({ value: device.deviceId, label: device.label || 'Camera' }))} />}
             <div><Button variant="icon" aria-label="Rotate camera" disabled={locked} onClick={() => camera.setRotation(value => (value + 90) % 360)}><RotateCw size={17} /></Button>
@@ -365,8 +367,8 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
           <Button disabled={!writable || locked || !!work.page} loading={busy === 'submit'} onClick={() => void submit()}>{busy === 'submit' ? 'Preparing submission…' : work.submit ? 'Retry this submission' : reviews.length ? 'Submit revised work' : 'Submit for review'}</Button>
           {view.status === 'grading' && <div className="assessment-grading"><ChatWaiting label="Ari is reviewing your submission" /><p>Ari is reviewing your work…</p></div>}
           {work.submit?.error && <Alert variant="destructive">{work.submit.error}{submitPendingSaved && ' Your submission was saved.'}</Alert>}
-          {latestSubmission?.status === 'failed' && !work.submit && view.status !== 'failed' && <Alert variant="destructive">{latestSubmission.error || 'Review failed. Your work is saved.'}<Button variant="secondary" disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Retry review</Button></Alert>}
-          {fallback && ((answer || '').trim() || view.pages.length > 0) && <Button variant="secondary" disabled={locked} onClick={() => void submit(true)}>Submit {view.pages.length ? 'saved pages' : 'typed work'}{view.pages.length && (answer || '').trim() ? ' and typed work' : ''} only</Button>}
+          {latestSubmission?.status === 'failed' && !work.submit && view.status !== 'failed' && <Alert variant="destructive">{latestSubmission.error || 'Review failed. Your work is saved.'}<Button variant="outline" disabled={locked} onClick={() => void run('retry', () => mutate('/retry'))}>Retry review</Button></Alert>}
+          {fallback && ((answer || '').trim() || view.pages.length > 0) && <Button variant="outline" disabled={locked} onClick={() => void submit(true)}>Submit {view.pages.length ? 'saved pages' : 'typed work'}{view.pages.length && (answer || '').trim() ? ' and typed work' : ''} only</Button>}
         </Card>
       </aside></div>}
     </>}

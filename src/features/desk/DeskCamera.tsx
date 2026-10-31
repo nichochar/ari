@@ -33,9 +33,9 @@ export function deskCameraContent(desk: DeskController, nativeAvailable: boolean
   const { camera, uploadedImage } = desk;
   const cameraPlaceholder = <div className="camera-placeholder"><Camera size={31} /><strong>Bring your notebook into view</strong>
     <p>Start a camera or upload a photo to share your work.</p>
-    <div>{nativeAvailable && <Button variant="secondary" loading={camera.starting} disabled={camera.starting}
+    <div>{nativeAvailable && <Button variant="outline" loading={camera.starting} disabled={camera.starting}
       onClick={() => void camera.startNative()}>{camera.starting ? 'Connecting…' : 'Use IPEVO on this Mac'}</Button>}
-      <Button variant="secondary" disabled={camera.starting} onClick={() => void camera.start()}>Use browser camera</Button></div>
+      <Button variant="outline" disabled={camera.starting} onClick={() => void camera.start()}>Use browser camera</Button></div>
   </div>;
   const cameraControls = camera.active && !uploadedImage && <div className="camera-controls">
     {camera.mode === 'browser' && <Select compact aria-label="Camera device" value={camera.deviceId}

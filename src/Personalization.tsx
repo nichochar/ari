@@ -52,7 +52,7 @@ function PersonalizationCard({ document, title, description, refresh, discuss }:
     {editing ? <><label>{title}<Textarea rows={10} maxLength={12000} value={content} onChange={event => setContent(event.target.value)} /></label>
       <div className="personalization-actions"><Button variant="primary" loading={busy} onClick={() => void save()}><Check size={14} />Save notes</Button><Button variant="ghost" disabled={busy} onClick={() => { setEditing(false); setError(''); }}>Cancel</Button></div>
     </> : <><div className="personalization-content">{document.content ? <Markdown>{document.content}</Markdown> : <p className="memory-description">Ari will build these notes with you as you talk.</p>}</div>
-      <div className="personalization-actions"><Button variant="secondary" onClick={() => discuss(`Let’s review and update ${title.toLowerCase()} in ${document.path}. `)}><MessageCircle size={14} />Discuss with Ari</Button>
+      <div className="personalization-actions"><Button variant="outline" onClick={() => discuss(`Let’s review and update ${title.toLowerCase()} in ${document.path}. `)}><MessageCircle size={14} />Discuss with Ari</Button>
         <Button variant="ghost" onClick={() => { setContent(document.content); setExpectedHash(document.hash); setEditing(true); setError(''); setStatus(''); }}><Pencil size={14} />Edit</Button>
         <Button variant="ghost" onClick={() => void openHistory()}><History size={14} />History</Button></div></>}
     <small className="personalization-updated">Updated {date(document.updatedAt)} · {author(document.actor)}</small>
@@ -61,7 +61,7 @@ function PersonalizationCard({ document, title, description, refresh, discuss }:
       <DialogTitle>{title} history</DialogTitle><DialogDescription>Choose an earlier version to read. Restoring it keeps the current version in history.</DialogDescription>
       {historyLoading ? <p role="status">Loading versions…</p> : revisions.length ? <div className="personalization-history-body">
         <div className="personalization-revisions" aria-label="Saved versions">{revisions.map(item => <Button key={item.revision} variant={selectedRevision === item.revision ? 'secondary' : 'ghost'} aria-pressed={selectedRevision === item.revision} onClick={() => setSelectedRevision(item.revision)}><span>{date(item.updatedAt)}<small>{author(item.actor)} · version {item.revision}{item.deleted ? ' · deleted' : ''}</small></span></Button>)}</div>
-        {revision && <div className="personalization-revision"><Markdown>{revision.deleted ? 'This file was deleted in this version.' : revision.content || 'No notes in this version.'}</Markdown><Button variant="secondary" loading={busy} disabled={revision.deleted || revision.hash === document.hash} onClick={() => void restore()}><RotateCcw size={14} />Restore this version</Button></div>}
+        {revision && <div className="personalization-revision"><Markdown>{revision.deleted ? 'This file was deleted in this version.' : revision.content || 'No notes in this version.'}</Markdown><Button variant="outline" loading={busy} disabled={revision.deleted || revision.hash === document.hash} onClick={() => void restore()}><RotateCcw size={14} />Restore this version</Button></div>}
       </div> : <p>No earlier versions yet.</p>}
       {error && <p className="inline-error" role="alert">{error}</p>}
     </DialogContent></Dialog>
@@ -100,7 +100,7 @@ function Memories({ data, discuss, refresh }: { data: PersonalizationView; discu
         {files.filter(item => !item.path.slice(directory.length).includes('/')).map(item => <Button key={item.path} variant={selected?.path === item.path ? 'secondary' : 'ghost'} aria-pressed={selected?.path === item.path} onClick={() => void read(item.path)}><FileText size={14} />{item.path.slice(directory.length)}</Button>)}</div>
       {!files.length && <p className="memory-description">No memories here yet. Ari adds relevant notes as you learn together.</p>}
       {loading && <p role="status">Opening memory…</p>}{error && <p className="inline-error" role="alert">{error}</p>}
-      {selected && <div className="memory-file-view"><h3>{selected.path.slice(directory.length)}</h3><Markdown>{selected.content}</Markdown>{selected.truncated && <p className="memory-description">Showing the first part of this note. Ask Ari to read more.</p>}<Button variant="secondary" onClick={() => discuss(`Let’s review the learning memory at ${selected.path}. `)}><MessageCircle size={14} />Discuss with Ari</Button></div>}
+      {selected && <div className="memory-file-view"><h3>{selected.path.slice(directory.length)}</h3><Markdown>{selected.content}</Markdown>{selected.truncated && <p className="memory-description">Showing the first part of this note. Ask Ari to read more.</p>}<Button variant="outline" onClick={() => discuss(`Let’s review the learning memory at ${selected.path}. `)}><MessageCircle size={14} />Discuss with Ari</Button></div>}
     </div>}
   </Card>;
 }
@@ -157,7 +157,7 @@ export function OnboardingConversation({ data, refresh, discuss, hasAnswer, disa
   if (data.onboarding.status !== 'new') return null;
   return <Card as="section" className="onboarding-conversation" aria-label="Getting to know you"><div className="onboarding-intro"><div><strong>Make Ari your tutor</strong><p>A few questions to get to know you. Share as much or as little as you like.</p></div>
     <div className="onboarding-actions">{hasAnswer && <Button variant="ghost" size="sm" aria-expanded={review} aria-controls="onboarding-recap" onClick={() => setReview(value => !value)}>{review ? 'Hide notes' : 'Review setup'}</Button>}<Button variant="ghost" size="sm" disabled={busy || disabled} onClick={() => void decide('skip')}>Skip for now</Button>
-      {hasAnswer && <Button variant="secondary" size="sm" loading={busy} disabled={disabled} onClick={() => void decide('complete')}><Check size={13} />Finish setup</Button>}</div></div>
+      {hasAnswer && <Button variant="outline" size="sm" loading={busy} disabled={disabled} onClick={() => void decide('complete')}><Check size={13} />Finish setup</Button>}</div></div>
     {review && <div id="onboarding-recap" className="onboarding-recap"><PersonalizationDocuments data={data} refresh={refresh} discuss={discuss} /></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
   </Card>;

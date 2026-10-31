@@ -25,7 +25,7 @@ type StudyDeskProps = {
 };
 export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLesson, tutorReady, nativeAvailable,
   generationBusy, generateExercise, selectExercise, showLesson, openPhoto, reviewStatus, reviewBusy, actionError }: StudyDeskProps) {
-  const { draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
+  const { photos, draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
     preparingGrade, sendError, pageBusy, pages, pageError, retryPages, conversation, progress,
     confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionMessage,
     setCameraExpanded, expandButtonRef, conversationRef, composerRef, shouldFollowConversation,
@@ -55,8 +55,8 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
               <TutorBubble response={session.response} createdAt={session.createdAt} />
             </div> : outgoing && <div className="exchange outgoing-exchange" key={id}>
               <ChatMessage author="user" createdAt={createdAt} arriving>
-                <p>{outgoing.request.message || (outgoing.pageSnapshotIds.length || outgoing.request.image ? workPhotoLabel(outgoing.pageSnapshotIds.length + Number(Boolean(outgoing.request.image))) : 'Grade my work')}</p>
-                <PhotoSet ids={[...outgoing.pageSnapshotIds, ...(outgoing.request.image ? [outgoing.request.image] : [])]}
+                <p>{outgoing.request.message || (outgoing.pageSnapshotIds.length || outgoing.request.image || outgoing.request.images?.length ? workPhotoLabel(outgoing.pageSnapshotIds.length + Number(Boolean(outgoing.request.image)) + (outgoing.request.images?.length || 0)) : 'Grade my work')}</p>
+                <PhotoSet ids={[...outgoing.pageSnapshotIds, ...(outgoing.request.image ? [outgoing.request.image] : []), ...(outgoing.request.images || [])]}
                   label="Submitted work" onOpen={openPhoto} />
               </ChatMessage>
               {outgoing.status === 'sending' && <ChatWaiting />}
@@ -69,14 +69,14 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
               <p>Ask a question or share your paper.</p>
             </div>}
           </div>
-          <ChatComposer inputRef={composerRef} value={draft} onChange={setDraft} onSend={() => void send('chat')}
+          <ChatComposer photos={photos} camera={camera} photosDisabled={!!sendMode || !!pageBusy || reflectionBusy} inputRef={composerRef} value={draft} onChange={setDraft} onSend={() => void send('chat')}
             sendDisabled={!!sendMode || !!pageBusy || reflectionBusy} label="Message to tutor"
             placeholder="Ask a question or describe your reasoning…" maxLength={4000}
             beforeInput={(pages.length > 0 || camera.active || uploadedImage) && <p className="composer-attachment"><Camera size={14} aria-hidden="true" />
               {pages.length ? `${pages.length} saved ${pages.length === 1 ? 'page' : 'pages'}${camera.active || uploadedImage ? ' + current view' : ' · Grade my work will capture the current view'}.`
                 : uploadedImage ? 'This photo is included with every message.' : 'A fresh photo of your paper is included with every message.'}
             </p>}
-            actions={<Button variant="secondary" disabled={!!sendMode || !!pageBusy || reflectionBusy} onClick={() => void send('check')}>
+            actions={<Button variant="outline" size="sm" disabled={!!sendMode || !!pageBusy || reflectionBusy || photos.busy} onClick={() => void send('check')}>
               {preparingGrade ? 'Connecting camera…' : 'Grade my work'}</Button>}>
             {preparingGrade && <p className="status-line loading-status" role="status"><AriSun size={28} />Connecting to your camera and waiting for your paper…</p>}
             {sendError && <p className="inline-error" role="alert">{sendError}</p>}
@@ -158,13 +158,13 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
           {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <AriSun size={28} />}{reviewStatus}</p>}
           {(nextExercise || nextLesson || currentModule) && <div className="next-actions">
             {nextExercise && <Tooltip>
-              <TooltipTrigger render={<Button variant="secondary" className="next-learning-action" onClick={() => selectExercise(nextExercise.id)} />}>
+              <TooltipTrigger render={<Button variant="outline" className="next-learning-action" onClick={() => selectExercise(nextExercise.id)} />}>
                 <span>Next exercise: {nextExercise.title}</span><ArrowRight size={16} />
               </TooltipTrigger>
               <TooltipContent>{nextExercise.title}</TooltipContent>
             </Tooltip>}
             {!nextExercise && nextLesson && <Tooltip>
-              <TooltipTrigger render={<Button variant="secondary" className="next-learning-action" onClick={() => showLesson(nextLesson.id)} />}>
+              <TooltipTrigger render={<Button variant="outline" className="next-learning-action" onClick={() => showLesson(nextLesson.id)} />}>
                 <span>Next lesson: {nextLesson.title}</span><ArrowRight size={16} />
               </TooltipTrigger>
               <TooltipContent>{nextLesson.title}</TooltipContent>

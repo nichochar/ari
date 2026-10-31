@@ -105,14 +105,14 @@ export default function App() {
         : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
           {learning.error ? <AriMark size={40} /> : <AriSun size={72} />}
           <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
-          {learning.error && <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></>}
+          {learning.error && <><p>{learning.error}</p><Button variant="outline" onClick={() => void learning.refresh()}>Try again</Button></>}
         </div></>}
       {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
     </section>}
     {view === 'assessments' && <section className="page">
       {learning.data ? <Assessments curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={path.activeCurriculum?.id} />
         : <><PageHeader title="Assessments" /><div className="loading-screen page-loading" role={learning.error ? 'alert' : 'status'}>
-          {learning.error ? <><p>{learning.error}</p><Button variant="secondary" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
+          {learning.error ? <><p>{learning.error}</p><Button variant="outline" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
         </div></>}
     </section>}
     {view === 'path' && <LearningPath path={path} state={state} catalog={study.catalog} learning={learning}

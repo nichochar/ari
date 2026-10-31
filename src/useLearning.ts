@@ -13,7 +13,7 @@ export type PendingMainMessage = { request: MainChatRequest; createdAt: string; 
 const pendingKey = 'ari:mainPending';
 function savedPending(): PendingMainMessage[] {
   try { return (JSON.parse(appStorage.getItem(pendingKey) || '[]') as PendingMainMessage[])
-    .filter(item => item.request?.id && item.request?.message).map(item => ({ ...item, status: 'failed', error: 'Delivery was interrupted. Retry to check or resume this message.' })); }
+    .filter(item => item.request?.id && (item.request?.message || item.request?.images?.length || item.request?.snapshotIds?.length)).map(item => ({ ...item, status: 'failed', error: 'Delivery was interrupted. Retry to check or resume this message.' })); }
   catch { return []; }
 }
 export function useLearning(mainOpen: boolean, betweenExercises = mainOpen) {

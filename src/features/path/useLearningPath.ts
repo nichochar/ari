@@ -79,18 +79,19 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
       if (lessonBusyRef.current.get(moduleId) === outgoing.id) lessonBusyRef.current.delete(moduleId);
     }
   }
-  function sendLessonMessage() {
-    if (!selectedModule || lessonBusyRef.current.has(selectedModule.id) || lessonOutgoing.length) return;
+  function sendLessonMessage(images: string[] = []) {
+    if (!selectedModule || lessonBusyRef.current.has(selectedModule.id) || lessonOutgoing.length) return false;
     const message = (lessonDrafts[selectedModule.id] || '').trim();
-    if (!message) return;
+    if (!message && !images.length) return false;
     const id = crypto.randomUUID();
     const outgoing: OutgoingLessonMessage = {
       id, createdAt: new Date().toISOString(), status: 'sending',
-      request: { id, moduleId: selectedModule.id, message },
+      request: { id, moduleId: selectedModule.id, message, ...(images.length ? { images } : {}) },
     };
     setOutgoingLessonMessages(current => [...current, outgoing]);
     setLessonDrafts(current => ({ ...current, [selectedModule.id]: '' }));
     void deliverLessonMessage(outgoing);
+    return true;
   }
   async function generateExercise(moduleId: string, difficulty: Difficulty) {
     if (generationBusy) return;

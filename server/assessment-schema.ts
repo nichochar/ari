@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { validateImage } from './schema.js';
+import { chatPhotosSchema, validateImage } from './schema.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const assessmentIdSchema = text(120);
@@ -10,7 +10,7 @@ const image = z.string().max(7_000_000).transform((value, ctx) => {
 export const assessmentCreateSchema = z.object({ id: assessmentIdSchema, curriculumId: assessmentIdSchema, minutes: z.number().int().min(5).max(180).optional() }).strict();
 export const assessmentPatchSchema = z.object({ lessonIds: ids.min(1).optional(), minutes: z.number().int().min(5).max(180).optional(), instructions: z.string().max(6000).optional(), answer: z.string().max(40000).optional() }).strict();
 export const assessmentPageSchema = z.object({ id: assessmentIdSchema, image }).strict();
-export const assessmentChatSchema = z.object({ id: assessmentIdSchema, message: text(12000), image: image.optional(), answer: z.string().max(40000).optional() }).strict();
+export const assessmentChatSchema = z.object({ id: assessmentIdSchema, message: text(12000), image: image.optional(), images: chatPhotosSchema.optional(), answer: z.string().max(40000).optional() }).strict();
 export const assessmentSubmitSchema = z.object({ id: assessmentIdSchema, image: image.optional(), answer: z.string().max(40000).optional() }).strict();
 export const assessmentPlanSchema = z.object({ title: text(200), lessonIds: ids.min(1), minutes: z.number().int().min(5).max(180), scopeReason: text(4000) }).strict();
 export const assessmentProblemSchema = z.object({ id: assessmentIdSchema, title: text(200), prompt: text(20000), lessonIds: ids.min(1), points: z.number().int().min(1).max(100), rubric: z.array(z.object({ criterion: text(2000), points: z.number().int().min(1).max(100) }).strict()).min(1).max(20), solution: text(30000) }).strict();

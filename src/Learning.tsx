@@ -1,3 +1,5 @@
+import { useChatPhotos } from './components/photos/useChatPhotos';
+import { PhotoSet, PhotoViewer, usePhotoViewer } from './components/study/photos';
 import { Card } from './components/ui/card';
 import { appStorage } from './storage';
 import { useEffect, useRef, useState } from 'react';
@@ -10,7 +12,7 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
 import { Select } from './components/ui/select';
-import { Checkbox } from './components/ui/checkbox';
+import { MenuCheckboxItem, MenuGroup, MenuItem, MenuLabel, MenuSeparator } from './components/ui/menu';
 import { FileUpload } from './components/ui/file-upload';
 import { AriMark, AriSun } from './components/ui/ari-mark';
 import { learningApi, learningError, type PendingMainMessage } from './useLearning';
@@ -56,9 +58,10 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
   data: LearningView; pending: PendingMainMessage[]; deliver: (item: PendingMainMessage) => Promise<void>; refresh: () => Promise<void>;
   focusId: string; setFocusId: (id: string) => void; openCurriculum: (id: string) => void; starter: string; clearStarter: () => void;
 }) {
+  const photos = useChatPhotos('main');
+  const viewer = usePhotoViewer();
   const [draft, setDraft] = useState(() => appStorage.getItem('ari:mainDraft') || '');
   const [attached, setAttached] = useState<string[]>(() => { try { return JSON.parse(appStorage.getItem('ari:mainAttachments') || '[]'); } catch { return []; } });
-  const [showMaterials, setShowMaterials] = useState(false);
   const pane = useRef<HTMLDivElement>(null), textarea = useRef<HTMLTextAreaElement>(null);
   const follow = useRef(true);
   const appliedStarter = useRef('');
@@ -76,14 +79,14 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
   const onboarding = data.personalization?.onboarding.status === 'new';
   function discuss(text: string) { setDraft(current => current.trim() ? current.trimEnd() + '\n\n' + text : text); textarea.current?.focus(); }
   function send() {
-    if (!draft.trim() || busy || pending.length) return;
-    const request: MainChatRequest = { id: crypto.randomUUID(), message: draft.trim(), ...(focusId ? { curriculumId: focusId } : {}), ...(attached.length ? { materialIds: attached } : {}) };
-    follow.current = true; void deliver({ request, createdAt: new Date().toISOString(), status: 'sending' }); setDraft(''); setAttached([]);
+    if ((!draft.trim() && !photos.images.length) || photos.busy || busy || pending.length) return;
+    const request: MainChatRequest = { id: crypto.randomUUID(), message: draft.trim(), ...(photos.images.length ? { images: photos.images } : {}), ...(focusId ? { curriculumId: focusId } : {}), ...(attached.length ? { materialIds: attached } : {}) };
+    follow.current = true; void deliver({ request, createdAt: new Date().toISOString(), status: 'sending' }); setDraft(''); setAttached([]); photos.clear();
   }
   function retry(runId?: string) {
     const run = data.runs.find(item => item.id === runId);
     const message = data.messages.find(item => item.id === run?.requestId);
-    if (message) void deliver({ request: { id: message.id, message: message.content, ...(message.curriculumId ? { curriculumId: message.curriculumId } : {}), ...(message.materialIds?.length ? { materialIds: message.materialIds } : {}) }, createdAt: message.createdAt, status: 'sending' });
+    if (message) void deliver({ request: { id: message.id, message: message.content, ...(message.snapshotIds?.length ? { snapshotIds: message.snapshotIds } : {}), ...(message.curriculumId ? { curriculumId: message.curriculumId } : {}), ...(message.materialIds?.length ? { materialIds: message.materialIds } : {}) }, createdAt: message.createdAt, status: 'sending' });
   }
   const latestUserId = data.messages.filter(message => message.role === 'user').at(-1)?.id;
   const linkedProposalIds = new Set(data.messages.flatMap(message => message.proposalIds || []));
@@ -95,14 +98,15 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
     <Card className={'conversation-panel main-conversation ' + (!data.messages.length && !pending.length ? 'is-empty' : '')}>
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
-        {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="secondary" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
+        {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="outline" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
         {data.messages.filter(message => !message.proactive || message.deliveredAt).map(message => <div className={'main-message ' + (message.role === 'user' ? 'outgoing-exchange' : '')} key={message.id}>
-          {message.content ? <ChatMessage author={message.role} createdAt={message.createdAt} busy={message.status === 'streaming' || message.status === 'pending'}
+          {message.content || message.snapshotIds?.length ? <ChatMessage author={message.role} createdAt={message.createdAt} busy={message.status === 'streaming' || message.status === 'pending'}
             details={(!!message.materialIds?.length || (message.role === 'assistant' && data.events.some(event => event.runId === message.runId && event.type === 'tool_call'))) ? <>
               {!!message.materialIds?.length && <div className="message-materials"><Paperclip size={12} />{message.materialIds.map(id => data.materials.find(item => item.id === id)?.title || 'Material').join(', ')}</div>}
               {message.role === 'assistant' && <ToolActivity data={data} runId={message.runId} running={message.status === 'pending' || message.status === 'streaming'} />}
             </> : undefined}>
             <Markdown>{message.content}</Markdown>
+            <PhotoSet ids={message.snapshotIds || []} label="Message photo" onOpen={viewer.openPhoto} />
           </ChatMessage> : message.status !== 'failed' && data.runs.find(run => run.id === message.runId)?.activity !== 'compacting' && <ChatWaiting />}
           {data.runs.find(run => run.id === message.runId)?.activity === 'compacting' && message.role === 'assistant'
             ? <ChatWaiting label="Compacting conversation…" showLabel />
@@ -110,19 +114,25 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
           {message.status === 'failed' && <div className="message-error" role="alert"><p>{message.error || 'Ari could not finish this reply.'}</p>{data.runs.find(run => run.id === message.runId)?.requestId === latestUserId ? <Button variant="ghost" disabled={busy} onClick={() => retry(message.runId)}><RefreshCw size={14} /> Retry message</Button> : <Button variant="ghost" onClick={() => { textarea.current?.focus(); textarea.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Continue the conversation <ArrowRight size={14} /></Button>}</div>}
           {message.proposalIds?.map(id => { const proposal = data.proposals.find(item => item.id === id); return proposal && <ProposalCard key={id} proposal={proposal} refresh={refresh} discuss={discuss} openCurriculum={openCurriculum} />; })}
         </div>)}
-        {pending.filter(item => !data.messages.some(message => message.id === item.request.id)).map(item => <div className="main-message outgoing-exchange" key={item.request.id}><ChatMessage author="user" createdAt={item.createdAt} arriving><Markdown>{item.request.message}</Markdown></ChatMessage>
+        {pending.filter(item => !data.messages.some(message => message.id === item.request.id)).map(item => <div className="main-message outgoing-exchange" key={item.request.id}><ChatMessage author="user" createdAt={item.createdAt} arriving><Markdown>{item.request.message}</Markdown><PhotoSet ids={item.request.images || item.request.snapshotIds || []} label="Message photo" onOpen={viewer.openPhoto} /></ChatMessage>
           {item.status === 'failed' ? <div className="message-error" role="alert"><p>{item.error}</p><Button variant="ghost" disabled={busy} onClick={() => void deliver(item)}><RefreshCw size={14} />Retry message</Button></div> : <ChatWaiting label="Sending…" />}
         </div>)}
         {data.proposals.filter(proposal => !linkedProposalIds.has(proposal.id)).map(proposal => <ProposalCard key={proposal.id} proposal={proposal} refresh={refresh} discuss={discuss} openCurriculum={openCurriculum} />)}
       </div>
-      <ChatComposer value={draft} onChange={setDraft} onSend={send} sendDisabled={!draft.trim() || busy || pending.length > 0}
+      <ChatComposer value={draft} onChange={setDraft} onSend={send} sendDisabled={(!draft.trim() && !photos.images.length) || busy || pending.length > 0}
+        photos={photos} photosDisabled={busy || pending.length > 0}
         inputRef={textarea} maxLength={12000} label="Message Ari" placeholder={onboarding ? 'Tell Ari what you’d like to learn…' : 'Ask Ari anything you want to learn…'}
         beforeInput={!!attached.length && <div className="attachment-chips">{attached.map(id => <Button variant="plain" key={id} onClick={() => setAttached(current => current.filter(item => item !== id))}><FileText size={12} />{data.materials.find(item => item.id === id)?.title || 'Material'}<X size={12} /></Button>)}</div>}
-        leadingActions={<Button variant="ghost" aria-expanded={showMaterials} aria-controls="main-material-picker" onClick={() => setShowMaterials(value => !value)}><Paperclip size={15} /> Materials</Button>}>
-        {showMaterials && <div id="main-material-picker" className="material-picker"><p>Select material for this message.</p>{data.materials.length ? data.materials.map(item => <label key={item.id}><Checkbox checked={attached.includes(item.id)} onCheckedChange={checked => setAttached(current => checked ? [...current, item.id] : current.filter(id => id !== item.id))} />{item.title} <small>{item.kind}</small></label>) : <p>No materials yet. Add a note, link or PDF below.</p>}</div>}
+        attachmentItems={<><MenuSeparator /><MenuGroup><MenuLabel>Saved materials</MenuLabel>
+          {data.materials.length ? data.materials.map(item => <MenuCheckboxItem key={item.id} checked={attached.includes(item.id)}
+            onCheckedChange={checked => setAttached(current => checked ? [...current, item.id] : current.filter(id => id !== item.id))}>
+            {item.title}
+          </MenuCheckboxItem>) : <MenuItem disabled>No saved materials yet</MenuItem>}
+        </MenuGroup></>}>
         {!data.provider.configured && <p className="provider-note">The main tutor is not configured. Your existing lessons and practice remain available.</p>}
       </ChatComposer>
     </Card>
+    <PhotoViewer viewer={viewer} />
     {!onboarding && <Materials data={data} refresh={refresh} />}
   </div>;
 }
@@ -136,14 +146,14 @@ function Materials({ data, refresh }: { data: LearningView; refresh: () => Promi
       let encoded: string | undefined;
       if (kind === 'pdf') { if (!file) throw new Error('Choose a PDF first.'); if (file.size > 5_000_000) throw new Error('Choose a PDF smaller than 5 MB.'); encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Could not read that PDF.')); reader.readAsDataURL(file); }); }
       await learningApi('/materials', { title: title.trim() || file?.name || 'Learning material', kind, ...(kind === 'note' ? { text } : kind === 'link' ? { url } : { data: encoded, filename: file?.name }) });
-      await refresh(); setTitle(''); setText(''); setUrl(''); setFile(null); setOpen(false); setMessage('Material saved. Select it with Materials when sending a message.');
+      await refresh(); setTitle(''); setText(''); setUrl(''); setFile(null); setOpen(false); setMessage('Material saved. Attach it with the paperclip when sending a message.');
     } catch (failure) { setMessage(learningError(failure)); } finally { setBusy(false); }
   }
   return <Card as="section" className="learning-materials"><div className="card-heading"><h3><BookOpen size={16} /> Your materials <small>{data.materials.length || ''}</small></h3><Button variant="ghost" aria-expanded={open} aria-controls="material-form" onClick={() => setOpen(value => !value)}><Plus size={14} /> Add material</Button></div>
     {!!data.materials.length && <div className="material-list">{data.materials.map(item => <div key={item.id}><FileText size={14} /><span>{<a href={item.url || '/api/learning/materials/' + encodeURIComponent(item.id) + '/source'} target="_blank" rel="noopener noreferrer" title={item.kind === 'pdf' ? 'Open saved PDF' : item.kind === 'note' ? 'Read saved note' : 'Open source'}>{item.title}</a>}</span><small>{item.kind} · saved</small></div>)}</div>}
     {open && <div id="material-form" className="material-form"><div className="form-field"><label htmlFor="material-type">Material type</label><Select id="material-type" value={kind} onValueChange={value => { setKind(value as typeof kind); setMessage(''); }} options={[{ value: 'note', label: 'Note' }, { value: 'link', label: 'Web link' }, { value: 'pdf', label: 'PDF' }]} /></div><label>Title<Input value={title} onChange={event => setTitle(event.target.value)} placeholder="A name you will recognise" maxLength={200} /></label>
       {kind === 'note' ? <label>Your notes<Textarea rows={4} value={text} onChange={event => setText(event.target.value)} maxLength={100000} /></label> : kind === 'link' ? <label>Public web address<Input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" /></label> : <div className="form-field"><span>PDF file</span><FileUpload label="Choose PDF" accept="application/pdf,.pdf" onFile={setFile} filename={file?.name} disabled={busy} /></div>}
-      <Button variant="secondary" loading={busy} disabled={busy || (kind === 'note' ? !text.trim() : kind === 'link' ? !url.trim() : !file)} onClick={() => void save()}>{busy ? 'Reading and saving…' : 'Save material'}</Button>
+      <Button variant="outline" loading={busy} disabled={busy || (kind === 'note' ? !text.trim() : kind === 'link' ? !url.trim() : !file)} onClick={() => void save()}>{busy ? 'Reading and saving…' : 'Save material'}</Button>
     </div>}{message && <p className="status-line" role="status">{message}</p>}
   </Card>;
 }

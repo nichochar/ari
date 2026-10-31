@@ -68,9 +68,10 @@ test('assessment planning is deliberate and idempotent; preparation independentl
 
 test('chat attaches actual images, persists help and never grades; reload retries saved failed chat without another image', async () => {
   const f = await fixture();
+  const images = [image, 'data:image/png;base64,' + Buffer.from([137,80,78,71,13,10,26,10,2]).toString('base64')];
   try {
     await f.active(); f.fail('chat');
-    await f.service().chat('assessment-1', { id: 'message-1', message: 'A small hint please.', image }); await f.service().settle();
+    await f.service().chat('assessment-1', { id: 'message-1', message: 'A small hint please.', images }); await f.service().settle();
     assert.equal((await f.service().view('assessment-1')).messages.at(-1)?.status, 'failed');
     assert.equal((await f.service().view('assessment-1')).submissions.length, 0);
     await f.restart(); f.fail('');
@@ -80,7 +81,9 @@ test('chat attaches actual images, persists help and never grades; reload retrie
     const input = f.calls.at(-1)!.input as { content: { type: string; text?: string; image_url?: string }[] }[];
     assert.equal(input[0].content[1].type, 'input_image'); assert.equal(input[0].content[1].image_url, image);
     assert.equal(input[0].content[0].text?.includes('base64'), false);
-    await f.service().chat('assessment-1', { id: 'message-1', message: 'A small hint please.', image }); await f.service().settle();
+    assert.deepEqual(input[0].content.filter(part => part.type === 'input_image').map(part => part.image_url), images);
+    assert.equal(view.messages[0].snapshotIds.length, 2);
+    await f.service().chat('assessment-1', { id: 'message-1', message: 'A small hint please.', images }); await f.service().settle();
     assert.equal(view.messages.length, 2);
     await assert.rejects(f.service().chat('assessment-1', { id: 'message-1', message: 'Different text.' }), denied);
     await f.active('other');

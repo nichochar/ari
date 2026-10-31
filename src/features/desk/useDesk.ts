@@ -1,3 +1,5 @@
+import { useChatPhotos } from '../../components/photos/useChatPhotos';
+import { photoLimitError } from '../../../shared/photos';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject, Dispatch, SetStateAction } from 'react';
 import type { AppState, Exercise, ExercisePage, ReflectionResponse, Session, TutorRequest } from '../../../shared/types';
@@ -19,6 +21,7 @@ type DeskOptions = {
   nativeAvailable: boolean; onIdle: () => void; setActionError: (message: string) => void;
 };
 export function useDesk({ active, state, setState, exercise, selectedId, selectedIdRef, nativeAvailable, onIdle, setActionError }: DeskOptions) {
+  const photos = useChatPhotos('exercise:' + selectedId);
   const [draft, setDraft] = useState('');
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [uploadName, setUploadName] = useState('');
@@ -164,9 +167,10 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     }
   }
   async function send(mode: TutorMode) {
-    if (!exercise || sendBusyRef.current || pageBusyRef.current || reflectionBusyRef.current) return;
+    if (!exercise || photos.busy || sendBusyRef.current || pageBusyRef.current || reflectionBusyRef.current) return;
     const exerciseId = exercise.id;
     const submittedPages = pages;
+    const images = photos.images;
     const submittedDraft = draft;
     const text = submittedDraft.trim();
     let image = uploadedImage || (camera.active ? camera.capture() : null);
@@ -195,10 +199,12 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
       setSendError('The live frame is not ready yet. Wait until the paper appears, then try again.');
       return;
     }
-    if (mode === 'chat' && !text && !image && !submittedPages.length) {
+    if (mode === 'chat' && !text && !image && !submittedPages.length && !images.length) {
       setSendError('Type a question, show your paper, or upload a photo before sending.');
       return;
     }
+    const photoError = images.length ? photoLimitError([...images, ...(image ? [image] : [])]) : undefined;
+    if (photoError) { setSendError(photoError); return; }
     setSendError('');
     const id = crypto.randomUUID();
     const outgoing: OutgoingMessage = {
@@ -206,11 +212,12 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
       pageSnapshotIds: submittedPages.map(page => page.snapshotId),
       request: { id, exerciseId, mode,
         ...(submittedPages.length ? { pageIds: submittedPages.map(page => page.id) } : {}),
-        ...(image ? { image } : {}), ...(text ? { message: text } : {}) },
+        ...(image ? { image } : {}), ...(images.length ? { images } : {}), ...(text ? { message: text } : {}) },
     };
     shouldFollowConversation.current = true;
     setOutgoingMessages(current => [...current, outgoing]);
     setDraft(current => current === submittedDraft ? '' : current);
+    photos.clear();
     composerRef.current?.focus();
     await deliverMessage(outgoing);
   }
@@ -294,7 +301,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     } finally { reflectionBusyRef.current = false; setReflectionBusy(false); }
   }
 
-  return { draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
+  return { photos, draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
     preparingGrade, sendError, pageBusy, pages, pageError, retryPages, conversation, progress,
     confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionMessage,
     cameraExpanded, setCameraExpanded, expandButtonRef, closeCameraRef, conversationRef, composerRef,

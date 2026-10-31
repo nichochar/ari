@@ -9,6 +9,7 @@ import { MAX_EXERCISE_PAGES, type AppState, type DailyReview, type Exercise, typ
 import { generateInstructions, lessonInstructions, normalizeGeneratedMath, reviewInstructions, tutorInstructions, verifyInstructions, type AIAsk } from './ai.js';
 import { dailyReviewRequestSchema, exerciseSchema, generateRequestSchema, lessonChatRequestSchema, pageRequestSchema, profilePatchSchema, progressPatchSchema, reflectionRequestSchema, reviewOutputSchema, tutorRequestSchema, tutorResponseSchema, validateImage } from './schema.js';
 import { StateStore } from './state.js';
+import { recentPhotos } from './chat-photos.js';
 import { cameraBridge } from './camera.js';
 import { LearningService } from './learning-service.js';
 import { learningRoutes } from './learning-routes.js';
@@ -101,7 +102,7 @@ function normalizeLesson(value: unknown): TutorResponse {
 
 function lessonHistory(state: AppState, moduleId: string) {
   return state.lessonSessions.filter(session => session.moduleId === moduleId).slice(-8).flatMap(session => [
-    { role: 'user' as const, content: session.requestText },
+    { role: 'user' as const, content: session.requestText, snapshotIds: session.snapshotIds ?? [] },
     { role: 'assistant' as const, content: [session.response.feedback, session.response.nextStep, session.response.question].filter(Boolean).join('\n').slice(0, 2000) },
   ]);
 }
@@ -123,7 +124,7 @@ function storedHistory(state: AppState, exerciseId: string) {
   ]);
 }
 
-function submittedImages(store: StateStore, state: AppState, exerciseId: string, pageIds: string[] | undefined, currentImage: string | undefined) {
+function submittedImages(store: StateStore, state: AppState, exerciseId: string, pageIds: string[] | undefined, currentImage: string | undefined, attachments: string[] = []) {
   const ids = pageIds ?? [];
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Each saved page may be selected only once.');
   if (ids.length > MAX_EXERCISE_PAGES) throw new HttpError(400, `Select at most ${MAX_EXERCISE_PAGES} saved pages.`);
@@ -134,7 +135,7 @@ function submittedImages(store: StateStore, state: AppState, exerciseId: string,
   });
   const images: string[] = [];
   const snapshotIds: string[] = [];
-  const imageOrder: { position: number; source: 'saved page' | 'current photo'; description: string; pageId?: string }[] = [];
+  const imageOrder: { position: number; source: 'saved page' | 'current photo' | 'attached photo'; description: string; pageId?: string }[] = [];
   let totalBytes = 0;
   for (const page of pages) {
     const snapshot = store.getSnapshot(page.snapshotId);
@@ -151,6 +152,11 @@ function submittedImages(store: StateStore, state: AppState, exerciseId: string,
     imageOrder.push({ position: images.length, source: 'current photo',
       description: 'Fresh current photo. It may overlap a saved page; count visible work only once.' });
   }
+  for (const image of attachments) {
+    images.push(image); totalBytes += Buffer.from(image.split(',')[1], 'base64').length;
+    imageOrder.push({ position: images.length, source: 'attached photo', description: 'Photo attached to this message.' });
+  }
+  if (images.length > 21) throw new HttpError(400, 'Select at most 21 photos including saved pages and the current view.');
   if (totalBytes > 25_000_000) throw new HttpError(400, 'Selected photos exceed 25 MB combined. Remove some pages.');
   return { images, snapshotIds, imageOrder };
 }
@@ -199,7 +205,7 @@ export function createApp(options: AppOptions = {}) {
   const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
   const reviewQueue = new Map<string, Promise<DailyReview>>();
   const tutorQueue = new Map<string, { requestHash: string; task: Promise<Session> }>();
-  const lessonQueue = new Map<string, { moduleId: string; message: string; language: 'en' | 'fr'; task: Promise<LessonSession> }>();
+  const lessonQueue = new Map<string, { moduleId: string; message: string; language: 'en' | 'fr'; requestHash: string; task: Promise<LessonSession> }>();
   const moduleLessonQueue = new Map<string, Promise<LessonSession>>();
   app.disable('x-powered-by');
   app.use((req, res, next) => {
@@ -320,14 +326,15 @@ export function createApp(options: AppOptions = {}) {
     const saved = state.lessonSessions.find(session => session.id === input.id);
     const pending = lessonQueue.get(input.id);
     const language = input.language ?? saved?.language ?? pending?.language ?? state.profile.language;
-    const matches = (session: { moduleId: string; requestText: string; language?: 'en' | 'fr' }) =>
-      session.moduleId === input.moduleId && session.requestText === input.message && (session.language ?? language) === language;
+    const requestHash = createHash('sha256').update(JSON.stringify({ moduleId: input.moduleId, message: input.message, language, images: input.images ?? [] })).digest('hex');
+    const matches = (session: LessonSession) => session.requestHash ? session.requestHash === requestHash
+      : !input.images?.length && session.moduleId === input.moduleId && session.requestText === input.message && (session.language ?? language) === language;
     if (saved) {
       if (!matches(saved)) throw new HttpError(409, 'This message ID already belongs to a different lesson request.');
       return res.json(saved);
     }
     if (pending) {
-      if (pending.moduleId !== input.moduleId || pending.message !== input.message || pending.language !== language)
+      if (pending.requestHash !== requestHash)
         throw new HttpError(409, 'This message ID already belongs to a different lesson request.');
       return res.json(await pending.task);
     }
@@ -337,22 +344,25 @@ export function createApp(options: AppOptions = {}) {
       if (previous) await previous.catch(() => undefined);
       const current = await store.read();
       const { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites } = module;
-      const payload = { lesson: { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites },
+      const earlier = recentPhotos(store, current.lessonSessions.filter(session => session.moduleId === module.id).slice(-8).flatMap(session => session.snapshotIds ?? []), input.images ?? []);
+      const images = [...earlier.map(photo => photo.image), ...(input.images ?? [])];
+      const payload = { imageOrder: [...earlier.map(({ snapshotId }) => ({ source: 'earlier message', snapshotId })), ...(input.images ?? []).map(() => ({ source: 'current message' }))], lesson: { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites },
         profile: profileDefaults(current.profile), language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message, history: lessonHistory(current, module.id) };
-      const raw = await safeAI(ai, 'tutor', lessonInstructions, payload);
+      const raw = await safeAI(ai, 'tutor', lessonInstructions, payload, images.length ? images : undefined);
       const session: LessonSession = { id: input.id, moduleId: module.id, createdAt: new Date().toISOString(),
-        requestText: input.message, language, response: normalizeLesson(raw) };
+        requestText: input.message, language, requestHash, response: normalizeLesson(raw) };
       return store.update(draft => {
         const existing = draft.lessonSessions.find(item => item.id === input.id);
         if (existing) {
           if (!matches(existing)) throw new HttpError(409, 'This message ID already belongs to a different lesson request.');
           return existing;
         }
+        if (input.images?.length) session.snapshotIds = input.images.map(image => store.saveSnapshot(image));
         draft.lessonSessions.push(session);
         return session;
       });
     })();
-    lessonQueue.set(input.id, { moduleId: module.id, message: input.message, language, task });
+    lessonQueue.set(input.id, { moduleId: module.id, message: input.message, language, requestHash, task });
     moduleLessonQueue.set(module.id, task);
     try { res.json(await task); }
     finally {
@@ -362,12 +372,13 @@ export function createApp(options: AppOptions = {}) {
   });
   app.post('/api/tutor', async (req, res) => {
     const input = body(tutorRequestSchema, req.body);
-    if (input.mode === 'check' && input.image === undefined && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Provide a photo or typed work to check.');
+    if (input.mode === 'check' && input.image === undefined && !input.images?.length && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Provide a photo or typed work to check.');
     if (input.mode === 'question' && !input.message?.trim()) throw new HttpError(400, 'Write a question for the tutor.');
-    if (input.mode === 'chat' && input.image === undefined && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Write a message or share a photo with the tutor.');
+    if (input.mode === 'chat' && input.image === undefined && !input.images?.length && !input.pageIds?.length && !input.message?.trim()) throw new HttpError(400, 'Write a message or share a photo with the tutor.');
     const id = input.id ?? randomUUID();
     const requestHash = createHash('sha256').update(JSON.stringify({
       exerciseId: input.exerciseId, mode: input.mode, message: input.message ?? '',
+      ...(input.images?.length ? { images: input.images } : {}),
       image: input.image ?? null, pageIds: input.pageIds ?? [],
       hintLevel: input.hintLevel ?? null, language: input.language ?? null,
     })).digest('hex');
@@ -386,13 +397,16 @@ export function createApp(options: AppOptions = {}) {
       const state = await catalogState();
       const exercise = findExercise(state, input.exerciseId);
       if (!exercise) throw new HttpError(404, 'Exercise not found.');
-      const submitted = submittedImages(store, state, exercise.id, input.pageIds, input.image);
+      const submitted = submittedImages(store, state, exercise.id, input.pageIds, input.image, input.images);
       if (!ai) throw new HttpError(503, 'AI tutoring is unavailable. Configure a provider to request feedback.');
+      const earlier = input.mode === 'chat' && !submitted.images.length
+        ? recentPhotos(store, state.sessions.filter(session => session.exerciseId === exercise.id).slice(-8).flatMap(session => session.snapshotIds ?? (session.snapshotId ? [session.snapshotId] : [])), []) : [];
+      const images = [...earlier.map(photo => photo.image), ...submitted.images];
       const payload = { exercise, mode: input.mode, hintLevel: input.hintLevel ?? Math.min(3, (state.progress[exercise.id]?.hintCount ?? 0) + 1),
         language: input.language ?? state.profile.language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message ?? '', history: storedHistory(state, exercise.id),
-        imageOrder: submitted.imageOrder };
+        imageOrder: [...earlier.map(({ snapshotId }, index) => ({ position: index + 1, source: 'earlier message', snapshotId, description: 'Previously submitted photo, for this follow-up question.' })), ...submitted.imageOrder] };
       const raw = await safeAI(ai, 'tutor', tutorInstructions(input.mode), payload,
-        submitted.images.length > 1 ? submitted.images : submitted.images[0]);
+        images.length > 1 ? images : images[0]);
       const response = normalizeTutor(raw, input.mode, exercise, Boolean(submitted.images.length || input.message?.trim()), payload.language);
       return store.update(draft => {
         const existing = draft.sessions.find(session => session.id === id);
@@ -404,7 +418,7 @@ export function createApp(options: AppOptions = {}) {
         draft.progress[exercise.id] = { ...defaultProgress(exercise.id), ...previous, updatedAt: new Date().toISOString(),
           hintCount: (previous?.hintCount ?? 0) + (input.mode === 'hint' ? 1 : 0),
           lastScore: response.score ?? previous?.lastScore ?? null };
-        const snapshotIds = [...submitted.snapshotIds, ...(input.image !== undefined ? [store.saveSnapshot(input.image)] : [])];
+        const snapshotIds = [...submitted.snapshotIds, ...(input.image !== undefined ? [store.saveSnapshot(input.image)] : []), ...(input.images ?? []).map(image => store.saveSnapshot(image))];
         const session: Session = { id, requestHash, createdAt: new Date().toISOString(), exerciseId: exercise.id, mode: input.mode,
           requestText: input.message ?? '', response, ...(snapshotIds.length ? { snapshotId: snapshotIds.at(-1), snapshotIds } : {}) };
         draft.sessions.push(session);

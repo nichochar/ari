@@ -83,6 +83,17 @@ DM Sans and Newsreader are self-hosted in `public/fonts/` and loaded through `sr
 
 Utility cards use one descriptive heading in Newsreader, without a second label repeating its purpose. An eyebrow is useful for distinct metadata, such as a lesson's phase or subject. Related steps share a card, with a simple internal divider when needed: reflection and next-exercise actions belong together.
 
+## Buttons
+
+Use the shared `Button` variants in `src/components/ui/button.tsx`; visual states belong in `src/components/ui.css`, not page-specific overrides. `outline` and `secondary` are distinct styles:
+
+- `outline`: surface background and a neutral border; hover adds the `--ari-subtle` gray fill without changing the border color.
+- `secondary`: filled `--ari-subtle` background with no visible border; hover uses `--ari-border` gray.
+- `primary`: solid graphite fill.
+- `ghost`: transparent until hovered, then `--ari-subtle` gray.
+
+Keep teal for keyboard focus rather than button hover borders.
+
 ## Confidence ratings
 
 Finish & continue uses five numbered choices through the shared Base UI `SegmentedControl`. The selected description is text only, with no repeated number or endpoint labels. New exercises start unselected; saved ratings are restored. A rating is required to save a reflection. Keep radio-group semantics, arrow-key navigation and visible keyboard focus.
@@ -133,3 +144,10 @@ When adding a surface, check its normal, selected, loading and error states, key
   - [Eratosthenes and the Syene well (MacTutor)](https://mathshistory.st-andrews.ac.uk/SH/eratosthenes_sh.pdf)
   - [The obelisk of Montecitorio, Augustus' gnomon](https://en.wikipedia.org/wiki/Obelisk_of_Montecitorio)
   - [Nicolas-Jacques Conté and the modern pencil](https://en.wikipedia.org/wiki/Nicolas-Jacques_Cont%C3%A9)
+
+
+All chats use the shared `ChatComposer`: one rounded input surface contains attachments, the growing text field, and a bottom toolbar. Camera and attachment controls sit on the left; send and grading actions sit on the right. The text field has no separate border; focus highlights the outer surface. Keep status and error messages outside it.
+
+Send uses an icon with a tooltip and accessible label, matching the camera and attachment buttons. Keep “Grade my work” as text to its left, using the shared compact button size. All toolbar buttons have the same height, including the larger touch targets on touch devices.
+
+Chat photos use the shared `ChatComposer` camera and upload actions. The paperclip is the single attachment entry point; Talk with Ari includes saved materials in that menu. Capture opens a temporary dialog, then adds a removable thumbnail to that conversation’s draft; sending is explicit. The dialog releases cameras it starts and preserves an existing Study desk or assessment preview. Study desk keeps its automatic current-photo behavior. Photos in ordinary chat never request grading.

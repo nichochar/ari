@@ -1,3 +1,5 @@
+import { useChatPhotos } from '../../components/photos/useChatPhotos';
+import { PhotoSet, PhotoViewer, usePhotoViewer } from '../../components/study/photos';
 import { useEffect, useRef } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { LessonSession } from '../../../shared/types';
@@ -8,11 +10,13 @@ import { AriIcon } from '../../components/ui/ari-mark';
 import { ChatComposer, ChatMessage, ChatWaiting } from '../../components/chat';
 import { Markdown } from '../../Markdown';
 import { TutorBubble } from '../../components/study/TutorBubble';
-export function LessonConversation({ sessions, outgoing, draft, onDraft, onSend, onRetry }: {
-  sessions: LessonSession[]; outgoing: OutgoingLessonMessage[]; draft: string;
-  onDraft: (value: string) => void; onSend: () => void;
+export function LessonConversation({ moduleId, sessions, outgoing, draft, onDraft, onSend, onRetry }: {
+  moduleId: string; sessions: LessonSession[]; outgoing: OutgoingLessonMessage[]; draft: string;
+  onDraft: (value: string) => void; onSend: (images: string[]) => boolean;
   onRetry: (message: OutgoingLessonMessage) => void;
 }) {
+  const photos = useChatPhotos('lesson:' + moduleId);
+  const viewer = usePhotoViewer();
   const paneRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
   const latestOutgoing = outgoing.at(-1)?.id;
@@ -33,6 +37,7 @@ export function LessonConversation({ sessions, outgoing, draft, onDraft, onSend,
       {entries.length ? entries.map(entry => <div className={'exchange ' + (entry.outgoing ? 'outgoing-exchange' : '')} key={entry.id}>
         <ChatMessage author="user" createdAt={entry.createdAt} arriving={!!entry.outgoing}>
           <Markdown>{entry.session ? entry.session.requestText : entry.outgoing!.request.message}</Markdown>
+          <PhotoSet ids={entry.session?.snapshotIds || entry.outgoing?.request.images || []} label="Message photo" onOpen={viewer.openPhoto} />
         </ChatMessage>
         {entry.session ? <TutorBubble response={entry.session.response} createdAt={entry.session.createdAt} />
           : entry.outgoing?.status === 'sending' ? <ChatWaiting /> : entry.outgoing && <div className="message-error" role="alert"><p>{entry.outgoing.error}</p>
@@ -40,7 +45,9 @@ export function LessonConversation({ sessions, outgoing, draft, onDraft, onSend,
           </div>}
       </div>) : <div className="conversation-empty"><AriIcon size={20} /><p>Ask about this lesson.</p></div>}
     </div>
-    <ChatComposer value={draft} onChange={onDraft} onSend={onSend} sendDisabled={pending || !draft.trim()}
+    <ChatComposer value={draft} onChange={onDraft} onSend={() => { if (onSend(photos.images)) photos.clear(); }} sendDisabled={pending || (!draft.trim() && !photos.images.length)}
+      photos={photos} photosDisabled={pending}
       label="Question about this lesson" placeholder="What would you like to understand?" maxLength={4000} />
+    <PhotoViewer viewer={viewer} />
   </Card>;
 }

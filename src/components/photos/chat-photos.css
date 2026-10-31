@@ -1,0 +1,12 @@
+.chat-photo-actions { display: flex; align-items: center; gap: 4px; margin-right: auto; }
+.chat-photo-draft { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.chat-photo-thumb { position: relative; width: 94px; height: 110px; border: 1px solid var(--ari-border); border-radius: var(--ari-radius-control); background: var(--ari-subtle); }
+.chat-photo-thumb > button:first-child { display: block; width: 100%; height: 100%; border-radius: inherit; overflow: hidden; }
+.chat-photo-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.chat-photo-thumb .chat-photo-remove { position: absolute; top: 3px; right: 3px; background: var(--ari-surface); }
+.ui-dialog-content.photo-capture-dialog { width: min(560px, calc(100vw - 24px)); }
+.photo-capture-view { height: min(420px, 52dvh); margin-top: 18px; border-radius: var(--ari-radius-control); overflow: hidden; }
+.photo-capture-loading { display: flex; gap: 8px; align-items: center; position: relative; }
+.photo-capture-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 12px; }
+.photo-capture-tools .ui-select-trigger { max-width: calc(100% - 48px); }
+.photo-capture-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import { MAX_CHAT_PHOTOS, photoLimitError } from '../shared/photos.js';
+
+export const chatPhotosSchema = z.array(z.string().max(7_000_000).transform((value, ctx) => {
+  try { return validateImage(value); }
+  catch { ctx.addIssue({ code: 'custom', message: 'Choose a valid JPEG, PNG, or WebP photo.' }); return z.NEVER; }
+})).max(MAX_CHAT_PHOTOS).superRefine((images, ctx) => {
+  const message = photoLimitError(images);
+  if (message) ctx.addIssue({ code: 'custom', message });
+});
 
 const bounded = (max: number) => z.string().trim().max(max);
 export const profileSchema = z.object({
@@ -36,7 +45,8 @@ const sessionSchema = z.object({
 }).strict();
 export const lessonSessionSchema = z.object({
   id: z.uuid(), moduleId: bounded(120).min(1), createdAt: z.iso.datetime(),
-  requestText: bounded(4000).min(1), response: tutorResponseSchema, language: z.enum(['en', 'fr']).optional(),
+  requestText: bounded(4000), response: tutorResponseSchema, language: z.enum(['en', 'fr']).optional(),
+  snapshotIds: z.array(z.uuid()).max(MAX_CHAT_PHOTOS).optional(), requestHash: z.string().length(64).optional(),
 }).strict();
 export const reflectionSchema = z.object({
   id: bounded(120), exerciseId: bounded(120), createdAt: z.iso.datetime(),
@@ -74,6 +84,7 @@ export const stateSchema = z.object({
 export const profilePatchSchema = profileSchema.partial().strict();
 export const progressPatchSchema = progressSchema.partial().strict();
 export const tutorRequestSchema = z.object({
+  images: chatPhotosSchema.optional(),
   id: z.uuid().optional(), exerciseId: bounded(120).min(1), mode: z.enum(['chat', 'hint', 'check', 'explain', 'question']),
   image: z.string().max(7_000_000).optional(), message: bounded(4000).optional(),
   pageIds: z.array(bounded(120).min(1)).max(20).optional(),
@@ -81,9 +92,9 @@ export const tutorRequestSchema = z.object({
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: bounded(2000) }).strict()).max(12).optional(),
 }).strict();
 export const lessonChatRequestSchema = z.object({
-  id: z.uuid(), moduleId: bounded(120).min(1), message: z.string().max(4000).trim().min(1),
-  language: z.enum(['en', 'fr']).optional(),
-}).strict();
+  id: z.uuid(), moduleId: bounded(120).min(1), message: z.string().max(4000).trim(),
+  language: z.enum(['en', 'fr']).optional(), images: chatPhotosSchema.optional(),
+}).strict().refine(input => input.message || input.images?.length, 'Write a question or attach a photo.');
 export const reflectionRequestSchema = z.object({
   exerciseId: bounded(120).min(1), confidence: z.number().int().min(1).max(5), notes: bounded(4000),
   image: z.string().max(7_000_000).optional(), pageIds: z.array(bounded(120).min(1)).max(20).optional(),

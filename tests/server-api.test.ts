@@ -925,3 +925,54 @@ test('the retired planner returns 404 without AI calls and preserves archived pl
     assert.equal(calls, 0);
   } finally { await fx.close(); }
 });
+
+
+test('lesson photos survive retry and restart, follow their lesson, and never produce grades', async () => {
+  const imagesSeen: unknown[] = [];
+  let fail = true;
+  const fx = await fixture(async (_task, _instructions, _payload, images) => {
+    imagesSeen.push(images);
+    if (fail) throw new Error('AI_TIMEOUT');
+    return { ...tutorReply, score: 100, criteria: [{ criterion: 'Invented', awarded: 1, max: 1, comment: '' }] };
+  });
+  try {
+    const input = { id: randomUUID(), moduleId: modules[0].id, message: '', images: [photo(1), photo(2)] };
+    assert.equal((await fx.request('/api/lesson-chat', 'POST', input)).status, 504);
+    fail = false;
+    const response = await fx.request('/api/lesson-chat', 'POST', input);
+    assert.equal(response.status, 200);
+    const saved = await response.json();
+    assert.equal(saved.snapshotIds.length, 2);
+    assert.equal(saved.response.score, null); assert.deepEqual(saved.response.criteria, []);
+    assert.deepEqual(imagesSeen.slice(0, 2), [input.images, input.images]);
+    await fx.restart();
+    assert.deepEqual(await (await fx.request('/api/lesson-chat', 'POST', input)).json(), saved);
+    assert.equal((await fx.request('/api/lesson-chat', 'POST', { ...input, images: [photo(3)] })).status, 409);
+    for (const id of saved.snapshotIds) assert.equal((await fx.request('/api/snapshots/' + id)).status, 200);
+    await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: modules[1].id, message: 'Other lesson' });
+    assert.equal(imagesSeen.at(-1), undefined);
+    await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: input.moduleId, message: 'Explain my second drawing' });
+    assert.deepEqual(imagesSeen.at(-1), input.images);
+    const state = await (await fx.request('/api/state')).json();
+    assert.deepEqual(state.lessonSessions.find((session: {id: string}) => session.id === input.id).snapshotIds, saved.snapshotIds);
+    for (const images of [['data:image/png;base64,bad'], Array(9).fill(photo(1)), [photo(1, 2_300_000), photo(2, 2_300_000)]]) {
+      assert.equal((await fx.request('/api/lesson-chat', 'POST', { ...input, id: randomUUID(), images })).status, 400);
+    }
+  } finally { await fx.close(); }
+});
+
+test('desk attachments accompany the current view and are part of retry identity', async () => {
+  let sent: unknown;
+  const fx = await fixture(async (_task, _instructions, _payload, images) => { sent = images; return tutorReply; });
+  try {
+    const input = { id: randomUUID(), exerciseId: exercises[0].id, mode: 'chat', image: photo(1), images: [photo(2), photo(3)] };
+    const saved = await (await fx.request('/api/tutor', 'POST', input)).json();
+    assert.deepEqual(sent, [input.image, ...input.images]); assert.equal(saved.snapshotIds.length, 3);
+    assert.deepEqual(await (await fx.request('/api/tutor', 'POST', input)).json(), saved);
+    assert.equal((await fx.request('/api/tutor', 'POST', { ...input, images: [photo(4)] })).status, 409);
+    await fx.request('/api/tutor', 'POST', { id: randomUUID(), exerciseId: input.exerciseId, mode: 'chat', message: 'Explain my photos.' });
+    assert.deepEqual(sent, [input.image, ...input.images]);
+    await fx.request('/api/tutor', 'POST', { id: randomUUID(), exerciseId: exercises[1].id, mode: 'chat', message: 'Another exercise.' });
+    assert.equal(sent, undefined);
+  } finally { await fx.close(); }
+});

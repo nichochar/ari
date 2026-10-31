@@ -66,8 +66,10 @@
 }
 .ui-button.ui-button-primary { background: var(--ari-action); color: var(--ari-on-accent); border-color: var(--ari-action); }
 .ui-button-primary:hover:not(:disabled) { background: var(--ari-action-hover); border-color: var(--ari-action-hover); }
-.ui-button.ui-button-secondary { background: var(--ari-surface); color: var(--ari-text); border-color: var(--ari-border); }
-.ui-button-secondary:hover:not(:disabled) { background: var(--ari-accent-soft); border-color: var(--ari-accent); }
+.ui-button.ui-button-secondary { background: var(--ari-subtle); color: var(--ari-text); }
+.ui-button-secondary:hover:not(:disabled) { background: var(--ari-border); }
+.ui-button.ui-button-outline { background: var(--ari-surface); color: var(--ari-text); border-color: var(--ari-border); }
+.ui-button-outline:hover:not(:disabled) { background: var(--ari-subtle); }
 .ui-button-ghost, .ui-button-icon { background: transparent; color: var(--ari-muted); }
 .ui-button-ghost:hover:not(:disabled), .ui-button-icon:hover:not(:disabled) { background: var(--ari-subtle); color: var(--ari-text); }
 .ui-button:disabled { cursor: default; opacity: .55; }
@@ -294,3 +296,16 @@
   .ui-input, .ui-textarea { font-size: 16px; }
   .ui-slider-control { min-height: 44px; }
 }
+
+
+.ui-menu-positioner { z-index: 120; isolation: isolate; }
+.ui-menu-content { min-width: 200px; max-width: min(360px, calc(100vw - 24px)); max-height: min(360px, var(--available-height)); overflow-y: auto; padding: 4px; background: var(--ari-surface); color: var(--ari-text); border: 1px solid var(--ari-border); border-radius: var(--ari-radius-control); box-shadow: 0 6px 20px color-mix(in srgb, var(--ari-text) 14%, transparent); outline: none; }
+.ui-menu-item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px; border-radius: var(--ari-radius-small); font-size: .8rem; cursor: pointer; outline: none; }
+.ui-menu-item[data-highlighted] { background: var(--ari-accent-soft); }
+.ui-menu-item[data-disabled] { color: var(--ari-muted); cursor: default; }
+.ui-menu-item > svg, .ui-menu-check { width: 16px; flex-shrink: 0; }
+.ui-menu-check { display: flex; align-items: center; justify-content: center; }
+.ui-menu-item-text { min-width: 0; overflow-wrap: anywhere; }
+.ui-menu-label { padding: 6px 8px; color: var(--ari-muted); font-size: .7rem; }
+.ui-menu-separator { height: 1px; margin: 4px; background: var(--ari-border); }
+@media (pointer: coarse) { .ui-menu-item { min-height: 44px; } }

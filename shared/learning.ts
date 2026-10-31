@@ -24,6 +24,7 @@ export interface MainMessage {
   id: string; role: 'user' | 'assistant'; content: string; createdAt: string;
   status: 'pending' | 'streaming' | 'complete' | 'failed'; error?: string;
   runId?: string; proposalIds?: string[]; materialIds?: string[]; curriculumId?: string;
+  snapshotIds?: string[];
   proactive?: boolean; deliveredAt?: string; readAt?: string;
 }
 export interface LearnerMemory {
@@ -61,4 +62,4 @@ export interface LearningView {
   events: Omit<LearningEvent, 'data'>[];
   unreadCount: number; provider: { configured: boolean; model: string; };
 }
-export interface MainChatRequest { id: string; message: string; curriculumId?: string; materialIds?: string[]; }
+export interface MainChatRequest { id: string; message: string; curriculumId?: string; materialIds?: string[]; images?: string[]; snapshotIds?: string[]; }

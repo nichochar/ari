@@ -33,7 +33,7 @@ export function Settings({ settings, learning, memoryRevision, discuss, actionEr
     <ModelSettings onSaved={learning.refresh} />
     {learning.data && <PersonalizationSettings data={learning.data.personalization} memoryRevision={memoryRevision} refresh={learning.refresh} discuss={discuss} />}
     <div className="settings-export">
-      <Button variant="secondary" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>
+      <Button variant="outline" onClick={() => void exportJournal()}><Download size={16} /> Export data</Button>
       <p className="export-note">JSON export contains snapshot IDs and conversation records. Open photos in the journal.</p>
       {actionError && <p className="page-error" role="alert">{actionError}</p>}
     </div>

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { exerciseSchema } from './schema.js';
+import { chatPhotosSchema, exerciseSchema } from './schema.js';
+import { MAX_CHAT_PHOTOS } from '../shared/photos.js';
 
 const text = (max: number) => z.string().max(max);
 const id = text(120).min(1);
@@ -30,6 +31,7 @@ export const learningProposalSchema = z.object({
   sourceUrls: z.array(text(4000).url().refine(value => ['http:', 'https:'].includes(new URL(value).protocol), 'Sources must use HTTP or HTTPS.')).max(30).optional(),
 }).strict();
 export const mainMessageSchema = z.object({
+  snapshotIds: z.array(z.uuid()).max(MAX_CHAT_PHOTOS).optional(),
   id, role: z.enum(['user', 'assistant']), content: text(MAX_MAIN_MESSAGE_LENGTH), createdAt: timestamp,
   status: z.enum(['pending', 'streaming', 'complete', 'failed']), error: text(4000).optional(),
   runId: id.optional(), proposalIds: ids.optional(), materialIds: ids.optional(), curriculumId: id.optional(),
@@ -123,9 +125,11 @@ export const learningDataSchema = z.object({
 });
 
 export const mainChatRequestSchema = z.object({
-  id: z.uuid(), message: z.string().trim().min(1).max(12000), curriculumId: id.optional(),
-  materialIds: z.array(id).max(20).optional(),
-}).strict();
+  id: z.uuid(), message: z.string().trim().max(12000), curriculumId: id.optional(),
+  materialIds: z.array(id).max(20).optional(), images: chatPhotosSchema.optional(),
+  snapshotIds: z.array(z.uuid()).max(MAX_CHAT_PHOTOS).optional(),
+}).strict().refine(input => input.message || input.images?.length || input.snapshotIds?.length, 'Write a question or attach a photo.')
+  .refine(input => !(input.images?.length && input.snapshotIds?.length), 'Use photos or saved message photos, not both.');
 export const memoryPatchSchema = z.object({ content: text(30000), revision: z.number().int().min(1) }).strict();
 
 export const personalizationWriteSchema = z.object({

@@ -138,7 +138,7 @@ export class AssessmentService {
       } else {
         working(a);
         if (a.messages.some(m => m.id === `${request.id}:reply`)) throw new AssessmentError(409, 'Choose a new message ID.');
-        const snapshotIds = request.image ? [this.store.saveSnapshot(request.image)] : [];
+        const snapshotIds = [...(request.images ?? []), ...(request.image ? [request.image] : [])].map(image => this.store.saveSnapshot(image));
         if (request.answer !== undefined) a.answer = request.answer;
         const contextSnapshotIds = [...new Set([...a.pages.map(p => p.snapshotId), ...a.messages.flatMap(m => m.snapshotIds), ...a.submissions.filter(s => s.status === 'complete').flatMap(s => s.snapshotIds), ...snapshotIds])];
         a.messages.push({ id: request.id, role: 'user', content: request.message, createdAt: now(), status: 'complete', snapshotIds, draftAnswer: a.answer, contextSnapshotIds, help: 'none', problemIds: [], requestHash: hash(request) },

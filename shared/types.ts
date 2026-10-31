@@ -28,7 +28,7 @@ export interface TutorResponse {
 }
 export interface TutorRequest {
   id?: string; exerciseId: string; mode: 'chat' | 'hint' | 'check' | 'explain' | 'question';
-  image?: string; pageIds?: string[]; message?: string; hintLevel?: number; language?: Language;
+  image?: string; images?: string[]; pageIds?: string[]; message?: string; hintLevel?: number; language?: Language;
   history?: { role: 'user' | 'assistant'; content: string }[];
 }
 export interface Session {
@@ -37,10 +37,11 @@ export interface Session {
   snapshotId?: string; snapshotIds?: string[];
 }
 export interface LessonChatRequest {
-  id: string; moduleId: string; message: string; language?: Language;
+  id: string; moduleId: string; message: string; language?: Language; images?: string[];
 }
 export interface LessonSession {
   id: string; moduleId: string; createdAt: string; requestText: string; response: TutorResponse; language?: Language;
+  snapshotIds?: string[]; requestHash?: string;
 }
 export interface Reflection {
   id: string; exerciseId: string; createdAt: string; confidence: number; notes: string;

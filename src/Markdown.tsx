@@ -35,7 +35,7 @@ function WorkspaceDocumentLink({ path, title, children }: { path: string; title?
     <DialogTrigger title={title || 'Read ' + path} render={<Button variant="plain" className="workspace-document-link" />}>{children}</DialogTrigger>
     <DialogContent className="workspace-document-dialog"><DialogTitle>{path}</DialogTitle><DialogDescription>A saved learning note. You can discuss changes with Ari.</DialogDescription>
       {document ? <div className="workspace-document-content"><Markdown workspaceLinks={false}>{document.content}</Markdown>{document.truncated && <p className="memory-description">Showing the first part of this note. Ask Ari to read more.</p>}</div>
-        : error ? <div><p className="inline-error" role="alert">{error}</p><Button variant="secondary" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div>
+        : error ? <div><p className="inline-error" role="alert">{error}</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div>
           : <p className="memory-description" role="status">Opening saved note…</p>}
     </DialogContent>
   </Dialog>;

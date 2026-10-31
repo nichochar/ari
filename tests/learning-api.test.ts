@@ -535,3 +535,47 @@ test('revisiting setup during compaction preserves both the native artifact and 
     await fx.close();
   }
 });
+
+
+test('main chat retains photos through failure, restart, follow-up and explicit retrieval after compaction', async () => {
+  const images = [1, 2].map(n => 'data:image/png;base64,' + Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, n]).toString('base64'));
+  const id = randomUUID();
+  let fail = true, retrieve = false;
+  const base = fixtureLearningProvider();
+  const seen: unknown[][] = [];
+  const provider = { ...base, run: async (request: Parameters<typeof base.run>[0]) => {
+    seen.push(request.input);
+    if (fail) throw new Error('Synthetic failure');
+    if (retrieve) {
+      const result = await request.executeTool('fetch_saved_work', { evidenceId: id, photoIndices: [0, 1] }, 'retrieve-original') as { images: string[] };
+      assert.deepEqual(result.images, images);
+    }
+    return base.run(request);
+  } };
+  const fx = await fixture(provider);
+  try {
+    const send = (body: unknown) => fx.request('/api/learning/chat', 'POST', body);
+    assert.equal((await send({ id, message: '', images })).status, 202); await fx.settle();
+    const saved = (await fx.store().readLearning()).messages.find(message => message.id === id)!;
+    assert.equal(saved.snapshotIds?.length, 2);
+    const parts = (seen[0].at(-1) as {content: {type: string; image_url?: string}[]}).content;
+    assert.deepEqual(parts.filter(part => part.type === 'input_image').map(part => part.image_url), images);
+    await fx.restart(); fail = false;
+    assert.equal((await send({ id, message: '', snapshotIds: saved.snapshotIds })).status, 202); await fx.settle();
+    assert.deepEqual(seen[1], seen[0]);
+    assert.equal((await send({ id, message: '', images: [images[1]] })).status, 409);
+    assert.equal((await send({ id: randomUUID(), message: '', snapshotIds: saved.snapshotIds })).status, 400);
+    assert.equal((await send({ id, message: '', images })).status, 202); await fx.settle();
+    assert.equal(seen.length, 2);
+    await chat(fx, 'Why is the second drawing different?'); await fx.settle();
+    assert.deepEqual(seen[2][0], seen[0][0]);
+    for (const snapshotId of saved.snapshotIds!) assert.equal((await fx.request('/api/snapshots/' + snapshotId)).status, 200);
+    await fx.store().updateLearning(data => { data.context = [{ type: 'compaction', encrypted_content: 'synthetic' }]; });
+    retrieve = true;
+    await chat(fx, 'Revisit my drawings'); await fx.settle();
+    const data = await fx.store().readLearning();
+    assert.equal(data.runs.at(-1)?.status, 'complete');
+    assert.equal(data.messages.filter(message => message.id === id).length, 1);
+    assert.deepEqual(data.messages.find(message => message.id === id)?.snapshotIds, saved.snapshotIds);
+  } finally { await fx.close(); }
+});

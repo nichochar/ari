@@ -1,7 +1,12 @@
+import { PhotoActions, PhotoDraft } from './photos/ChatPhotos';
+import type { ChatPhotos } from './photos/useChatPhotos';
+import type { CameraController } from './photos/PhotoCapture';
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { MoreHorizontal, Send } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import { Alert } from './ui/alert';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
 import { AriDot, AriSun } from './ui/ari-mark';
 
@@ -43,11 +48,13 @@ export function ChatWaiting({ label = 'Ari is thinking', showLabel = false }: { 
 
 /** Shared compact, growing composer; context-specific actions remain explicit slots. */
 export function ChatComposer({ value, onChange, onSend, sendDisabled, placeholder, label, maxLength,
-  inputRef, beforeInput, leadingActions, actions, children }: {
+  inputRef, beforeInput, attachmentItems, actions, children, photos, camera, photosDisabled = false }: {
   value: string; onChange: (value: string) => void; onSend: () => void; sendDisabled: boolean;
   placeholder: string; label: string; maxLength: number; inputRef?: RefObject<HTMLTextAreaElement | null>;
-  beforeInput?: ReactNode; leadingActions?: ReactNode; actions?: ReactNode; children?: ReactNode;
+  photos?: ChatPhotos; camera?: CameraController; photosDisabled?: boolean;
+  beforeInput?: ReactNode; attachmentItems?: ReactNode; actions?: ReactNode; children?: ReactNode;
 }) {
+  sendDisabled = sendDisabled || !!photos?.busy;
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const textarea = inputRef ?? ownRef;
   useLayoutEffect(() => {
@@ -62,16 +69,27 @@ export function ChatComposer({ value, onChange, onSend, sendDisabled, placeholde
     return () => observer.disconnect();
   }, [value, textarea]);
   return <div className="composer">
-    {beforeInput}
-    <Textarea ref={textarea} value={value} rows={1} maxLength={maxLength} placeholder={placeholder} aria-label={label}
-      onChange={event => onChange(event.target.value)} onKeyDown={event => {
-        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-          event.preventDefault(); if (!sendDisabled) onSend();
-        }
-      }} />
-    <div className="composer-actions">{leadingActions}<span className="composer-keyboard-hint">Enter to send · Shift+Enter for a new line</span>
-      {actions}<Button variant="primary" disabled={sendDisabled} onClick={onSend}>Send <Send size={15} /></Button>
+    <div className="composer-surface">
+      {beforeInput}
+      {photos && <PhotoDraft photos={photos} disabled={photosDisabled || photos.busy} />}
+      <Textarea ref={textarea} value={value} rows={1} maxLength={maxLength} placeholder={placeholder} aria-label={label}
+        onChange={event => onChange(event.target.value)} onKeyDown={event => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault(); if (!sendDisabled) onSend();
+          }
+        }} />
+      <div className="composer-actions">
+        {photos && <PhotoActions key={photos.key} photos={photos} camera={camera} disabled={photosDisabled} attachmentItems={attachmentItems} />}
+        <div className="composer-submit-actions">
+          {actions}
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="primary" size="icon" aria-label="Send" disabled={sendDisabled} onClick={onSend} />}><Send size={17} aria-hidden="true" /></TooltipTrigger>
+            <TooltipContent>Send</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
     </div>
+    {photos?.error && <Alert variant="destructive" onDismiss={() => photos.setError('')}>{photos.error}</Alert>}
     {children}
   </div>;
 }

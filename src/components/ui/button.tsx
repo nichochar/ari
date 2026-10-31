@@ -11,6 +11,7 @@ const buttonVariants = cva('ui-button', {
     variant: {
       primary: 'ui-button-primary',
       secondary: 'ui-button-secondary',
+      outline: 'ui-button-outline',
       ghost: 'ui-button-ghost',
       icon: 'ui-button-icon',
       plain: 'ui-button-plain',

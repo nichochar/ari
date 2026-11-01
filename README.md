@@ -20,6 +20,14 @@ I recommend just pointing your AI to this repo and ask it to set it all up for y
 
 ![Ari running locally](public/ari-screenshot.png)
 
+## Graphs
+
+Ari draws interactive 2D and 3D graphs in its replies, lessons and exercises. It writes a small text block and the app renders it as a live plot: drag the sliders, orbit a surface or edit the expressions, then ask Ari about your changes. It receives your version of the graph and a picture of the view.
+
+![Ari drawing a sphere, a wave, the unit circle and a heart in a chat](docs/images/plot.gif)
+
+The plotting is its own package, [ari-plot](packages/plot), published on npm.
+
 ## Run locally
 
 You need Node.js 24+, git, ffmpeg, and a chatGPT account. The built-in camera bridge is Mac-only, while browser cameras and photo uploads do not need it.
@@ -55,8 +63,6 @@ The chat shows “Compacting conversation…” while this happens, then continu
 4. Open **Assessments** for a fresh mixed paper. Adjust Ari’s proposed topics, work at your pace, and submit for a score and learning diagnosis. Hints are allowed; each submission and its photos stay saved.
 
 New learners start with a brief conversation.
-
-Ari can draw interactive 2D and 3D graphs in its replies, lessons and exercises. Drag sliders or edit the expressions, then ask Ari about your changes: it receives your version of the graph and a picture of the view.
 
 I used a TUTOR.md for Ari's personality and a USER.md for how it learns about you. These evolve automatically but you can edit them directly or by chatting with Ari.
 

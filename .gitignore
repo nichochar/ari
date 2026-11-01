@@ -37,3 +37,6 @@ audit/
 
 # Experiments and research notes stay out of the repository.
 /scratch/
+
+# Git worktrees the desktop app creates inside the checkout.
+/.claude/worktrees/

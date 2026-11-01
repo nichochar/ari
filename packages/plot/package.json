@@ -4,19 +4,51 @@
   "description": "Interactive 2D and 3D math plots from a small text language, built for tutors and chat.",
   "license": "MIT",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./react": "./src/react.tsx",
-    "./plot.css": "./src/plot.css",
-    "./prompt": "./src/prompt.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nichochar/ari.git",
+    "directory": "packages/plot"
   },
-  "files": [
-    "src",
-    "LANGUAGE.md",
-    "README.md"
+  "keywords": [
+    "plot",
+    "graph",
+    "math",
+    "desmos",
+    "three.js",
+    "webgl",
+    "tutor",
+    "llm"
   ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./prompt": {
+      "types": "./dist/prompt.d.ts",
+      "default": "./dist/prompt.js"
+    },
+    "./plot.css": "./dist/plot.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist",
+    "LANGUAGE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/plot.css dist/plot.css",
+    "prepublishOnly": "npm run build"
+  },
   "dependencies": {
     "three": "^0.187.0"
   },

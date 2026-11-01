@@ -1,5 +1,5 @@
 {
-  "name": "@ari/plot",
+  "name": "ari-plot",
   "version": "0.1.0",
   "description": "Interactive 2D and 3D math plots from a small text language, built for tutors and chat.",
   "license": "MIT",

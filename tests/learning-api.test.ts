@@ -10,7 +10,7 @@ import { StateStore } from '../server/state.js';
 import { LearningService } from '../server/learning-service.js';
 import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
 import type { AIAsk } from '../server/ai.js';
-import { promptReference } from '@ari/plot';
+import { promptReference } from 'ari-plot';
 import { exercises } from '../shared/curriculum.js';
 import { fixtureLearningProvider, historyProposal, preparedLesson, toolReply } from './fixtures/learning.js';
 

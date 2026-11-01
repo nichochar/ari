@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import katex from 'katex';
-import { mountPlot, type PlotHandle } from '@ari/plot';
-import '@ari/plot/plot.css';
+import { mountPlot, type PlotHandle } from 'ari-plot';
+import 'ari-plot/plot.css';
 import './plot.css';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { PlotAskContext } from './ask';

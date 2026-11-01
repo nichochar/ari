@@ -10,7 +10,7 @@ import { AssessmentError, AssessmentService } from '../server/assessment-service
 import type { LearningAgentRequest } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
 import type { AssessmentProblem } from '../shared/assessments.js';
-import { promptReference } from '@ari/plot';
+import { promptReference } from 'ari-plot';
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aC1sAAAAASUVORK5CYII=';
 const denied = (error: unknown) => error instanceof AssessmentError && error.status === 409;

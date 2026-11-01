@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/app.js';
 import { StateStore } from '../server/state.js';
 import { generateInstructions, lessonInstructions, normalizeGeneratedMath, tutorInstructions, type AIAsk } from '../server/ai.js';
-import { promptReference } from '@ari/plot';
+import { promptReference } from 'ari-plot';
 import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
 

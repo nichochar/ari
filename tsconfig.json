@@ -4,7 +4,7 @@
     "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx",
     "strict": true, "esModuleInterop": true, "resolveJsonModule": true,
     "skipLibCheck": true, "noEmit": true, "types": ["node"],
-    "baseUrl": ".", "paths": { "@/*": ["src/*"], "@ari/plot": ["packages/plot/src/index.ts"], "@ari/plot/*": ["packages/plot/src/*"] }
+    "baseUrl": ".", "paths": { "@/*": ["src/*"], "ari-plot": ["packages/plot/src/index.ts"], "ari-plot/*": ["packages/plot/src/*"] }
   },
   "include": ["src", "server", "shared", "tests", "vite.config.ts", "packages/plot/src", "packages/plot/test"]
 }

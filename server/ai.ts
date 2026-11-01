@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import katex from 'katex';
-import { promptReference } from '@ari/plot/prompt';
+import { promptReference } from 'ari-plot/prompt';
 import type { Exercise, TutorRequest } from '../shared/types.js';
 
 export type AITask = 'tutor' | 'generate' | 'verify' | 'review';

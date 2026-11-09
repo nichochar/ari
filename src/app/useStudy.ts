@@ -44,6 +44,20 @@ export function useStudy(learningData: LearningView | null) {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  const missingReflection = useMemo(() => {
+    if (!state) return;
+    const known = new Set(state.reflections.map(item => item.id));
+    return learningData?.reflectionNotes?.find(note => !known.has(note.reflectionId))?.reflectionId;
+  }, [state?.reflections, learningData?.reflectionNotes]);
+  useEffect(() => {
+    if (!missingReflection) return;
+    const controller = new AbortController();
+    void api<AppState>('/api/state', { signal: controller.signal }, 30000).then(next => {
+      setState(current => current ? { ...current, reflections: mergeSessions(current.reflections, next.reflections) } : current);
+    }).catch(error => { if (!controller.signal.aborted) setLoadError(errorText(error)); });
+    return () => controller.abort();
+  }, [missingReflection]);
+
   const allModules = useMemo(() => [...new Map([...courseModules, ...(learningData?.lessons || [])].map(item => [item.id, item])).values()], [learningData?.lessons]);
   const catalog = useMemo(() => [...new Map([...curated, ...(state?.generatedExercises || []), ...(learningData?.exercises || [])].map(item => [item.id, item])).values()], [state?.generatedExercises, learningData?.exercises]);
   const exercise = catalog.find(item => item.id === selectedId);

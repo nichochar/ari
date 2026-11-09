@@ -53,6 +53,7 @@ export interface LearningData {
   reviewedEvidenceIds: string[];
 }
 export interface LearningView {
+  reflectionNotes: { reflectionId: string; messageId: string }[];
   personalization: PersonalizationView;
   curricula: Curriculum[]; lessons: LearningLesson[]; exercises: Exercise[];
   messages: MainMessage[]; proposals: LearningProposal[];

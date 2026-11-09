@@ -85,9 +85,10 @@ export function useLearning(mainOpen: boolean, betweenExercises = mainOpen) {
     // Stable run IDs prevent SSE/refetch cycles from repeatedly calling idle.
     if (betweenExercises && available && !chatRunning) void learningApi('/idle', {}).then(refresh).catch(() => {});
   }, [betweenExercises, available, completedReviews, chatRunning, refresh]);
+  const unreadDelivered = data?.messages.filter(message => message.proactive && message.deliveredAt && !message.readAt).map(message => message.id).join('|');
   useEffect(() => {
-    if (mainOpen && data?.unreadCount) void learningApi('/read', {}).then(refresh).catch(() => {});
-  }, [mainOpen, data?.unreadCount, refresh]);
+    if (mainOpen && unreadDelivered) void learningApi('/read', {}).then(refresh).catch(() => {});
+  }, [mainOpen, unreadDelivered, refresh]);
   const deliver = useCallback(async (item: PendingMainMessage) => {
     if (busyRef.current) return;
     busyRef.current = true;

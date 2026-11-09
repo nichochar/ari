@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { PageHeader } from '../../components/page-header';
@@ -11,11 +12,17 @@ import { TutorBubble } from '../../components/study/TutorBubble';
 import { formatDate } from '../../app/date';
 import type { JournalController } from './useJournal';
 type JournalProps = {
-  journal: JournalController; state: AppState; catalog: Exercise[]; allModules: Module[];
+  targetReflectionId: string; journal: JournalController; state: AppState; catalog: Exercise[]; allModules: Module[];
   selectExercise: (id: string) => void; showLesson: (id: string) => void; openPhoto: OpenPhoto; actionError: string;
 };
-export function Journal({ journal, state, catalog, allModules, selectExercise, showLesson, openPhoto, actionError }: JournalProps) {
+export function Journal({ targetReflectionId, journal, state, catalog, allModules, selectExercise, showLesson, openPhoto, actionError }: JournalProps) {
   const { latestReview, reviewStatus, reviewBusy, runDailyReview } = journal;
+  useEffect(() => {
+    if (!targetReflectionId) return;
+    const entry = document.getElementById('reflection-' + targetReflectionId);
+    entry?.focus({ preventScroll: true });
+    entry?.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }, [targetReflectionId]);
   return <section className="page">
     <PageHeader title="Journal" description="Conversations, submitted photos, reflections, and the tutor’s daily review." />
     <div className="journal-grid">
@@ -45,7 +52,7 @@ export function Journal({ journal, state, catalog, allModules, selectExercise, s
       <Card className="journal-card"><h2>Exercise reflections</h2>
         {state.reflections?.length ? [...state.reflections].reverse().map(item => {
           const linked = catalog.find(candidate => candidate.id === item.exerciseId);
-          return <article className="journal-entry" key={item.id}>
+          return <article className="journal-entry" key={item.id} id={'reflection-' + item.id} tabIndex={item.id === targetReflectionId ? -1 : undefined}>
             <Button variant="plain" className="entry-title" onClick={() => selectExercise(item.exerciseId)}>{linked?.title || item.exerciseId} <ArrowRight size={15} /></Button>
             <small>{formatDate(item.createdAt)} · confidence {item.confidence}/5</small>
             <p>{item.notes || 'No written note for this reflection.'}</p>

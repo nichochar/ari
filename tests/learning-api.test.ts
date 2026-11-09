@@ -173,9 +173,20 @@ test('reflection analysis preserves user corrections, delivers at idle once and 
   try { const saved = await fx.request('/api/reflections', 'POST', { exerciseId: exercises[0].id, confidence: 3, notes: 'The comparison was difficult.' }); assert.equal(saved.status, 201); await started;
     const before = (await fx.service().view()).memory; const patch = await fx.request('/api/learning/memory', 'PATCH', { revision: before.revision, content: 'User correction: I understand comparison but need vocabulary.' }); assert.equal(patch.status, 200);
     assert.equal((await fx.request('/api/learning/memory', 'PATCH', { revision: before.revision, content: 'Old revision' })).status, 409);
-    release(); await fx.settle(); let d = await fx.store().readLearning(); assert.match((await fx.service().view()).memory.content, /User correction/); assert.equal((await (await fx.request('/api/learning')).json()).messages.filter((m: {proactive?: boolean}) => m.proactive).length, 0);
+    const { reflection } = await saved.json();
+    assert.deepEqual((await fx.service().view()).reflectionNotes, []);
+    release(); await fx.settle();
+    const pending = await fx.service().view();
+    assert.match(pending.memory.content, /User correction/);
+    assert.equal(pending.messages.filter(m => m.proactive).length, 0);
+    assert.equal(pending.unreadCount, 1);
+    assert.equal(pending.reflectionNotes.length, 1);
+    assert.equal(pending.reflectionNotes[0].reflectionId, reflection.id);
     assert.equal((await (await fx.request('/api/learning/idle', 'POST', {})).json()).delivered, 1); assert.equal((await (await fx.request('/api/learning/idle', 'POST', {})).json()).delivered, 0);
-    d = await fx.store().readLearning(); assert.ok(d.context.some(i => (i as {content?:string}).content === 'Compare an independent source next time.')); assert.equal(d.messages.filter(m => m.proactive).length, 1);
+    const delivered = await fx.service().view();
+    assert.deepEqual(delivered.reflectionNotes, pending.reflectionNotes);
+    assert.equal(delivered.messages.find(m => m.proactive)?.id, pending.reflectionNotes[0].messageId);
+    const d = await fx.store().readLearning(); assert.ok(d.context.some(i => (i as {content?:string}).content === 'Compare an independent source next time.')); assert.equal(d.messages.filter(m => m.proactive).length, 1);
     assert.equal((await (await fx.request('/api/learning')).json()).unreadCount, 1); await fx.request('/api/learning/read', 'POST', {}); assert.equal((await (await fx.request('/api/learning')).json()).unreadCount, 0);
   } finally { release(); await fx.close(); }
 });

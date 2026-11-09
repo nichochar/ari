@@ -55,7 +55,8 @@ export function ProposalCard({ proposal, refresh, discuss, openCurriculum }: {
   </Card>;
 }
 
-export function MainConversation({ data, pending, deliver, refresh, focusId, setFocusId, openCurriculum, starter, clearStarter }: {
+export function MainConversation({ data, targetMessageId, reflectionSources, openReflection, pending, deliver, refresh, focusId, setFocusId, openCurriculum, starter, clearStarter }: {
+  targetMessageId: string; reflectionSources: Map<string, { id: string; title: string }>; openReflection: (id: string) => void;
   data: LearningView; pending: PendingMainMessage[]; deliver: (item: PendingMainMessage) => Promise<void>; refresh: () => Promise<void>;
   focusId: string; setFocusId: (id: string) => void; openCurriculum: (id: string) => void; starter: string; clearStarter: () => void;
 }) {
@@ -75,7 +76,19 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
     setDraft(current => current.trim() ? current.trimEnd() + '\n\n' + starter : starter);
     clearStarter(); textarea.current?.focus();
   }, [starter, clearStarter]);
-  useEffect(() => { if (pane.current && follow.current) pane.current.scrollTop = pane.current.scrollHeight; }, [data.messages, pending, data.proposals]);
+  const jumpedTo = useRef('');
+  useEffect(() => {
+    if (targetMessageId && jumpedTo.current !== targetMessageId) {
+      const message = document.getElementById('main-message-' + targetMessageId);
+      if (!message) return;
+      jumpedTo.current = targetMessageId;
+      follow.current = false;
+      message.focus({ preventScroll: true });
+      message.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    } else if (pane.current && follow.current) {
+      pane.current.scrollTop = pane.current.scrollHeight;
+    }
+  }, [targetMessageId, data.messages, pending, data.proposals]);
   const busy = pending.some(item => item.status === 'sending') || data.runs.some(run => run.kind === 'chat' && (run.status === 'running' || run.status === 'queued'));
   const onboarding = data.personalization?.onboarding.status === 'new';
   const askPlot = usePlotAsk({ setDraft, photos, focus: textarea });
@@ -101,21 +114,27 @@ export function MainConversation({ data, pending, deliver, refresh, focusId, set
       <div className="conversation" role="log" aria-label="Main conversation" aria-live="polite" aria-relevant="additions text" ref={pane}
         onScroll={event => { const node = event.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         {!data.messages.length && !pending.length && <div className="main-chat-empty"><AriMark size={46} /><h3>{onboarding ? 'Welcome to Ari' : 'What would you like to understand?'}</h3><p>{onboarding ? 'What would you like to learn, and what are you hoping to do with it?' : 'Explore a question, work through an idea, or shape a new learning path together.'}</p>{!onboarding && <div>{['Help me explore a new subject', 'What should I practise next?'].map(text => <Button variant="outline" key={text} onClick={() => { setDraft(text); textarea.current?.focus(); }}>{text}</Button>)}</div>}</div>}
-        {data.messages.filter(message => !message.proactive || message.deliveredAt).map(message => <div className={'main-message ' + (message.role === 'user' ? 'outgoing-exchange' : '')} key={message.id}>
-          {message.content || message.snapshotIds?.length ? <ChatMessage author={message.role} createdAt={message.createdAt} busy={message.status === 'streaming' || message.status === 'pending'}
-            details={(!!message.materialIds?.length || (message.role === 'assistant' && data.events.some(event => event.runId === message.runId && event.type === 'tool_call'))) ? <>
-              {!!message.materialIds?.length && <div className="message-materials"><Paperclip size={12} />{message.materialIds.map(id => data.materials.find(item => item.id === id)?.title || 'Material').join(', ')}</div>}
-              {message.role === 'assistant' && <ToolActivity data={data} runId={message.runId} running={message.status === 'pending' || message.status === 'streaming'} />}
-            </> : undefined}>
-            <Markdown>{message.content}</Markdown>
-            <PhotoSet ids={message.snapshotIds || []} label="Message photo" onOpen={viewer.openPhoto} />
-          </ChatMessage> : message.status !== 'failed' && data.runs.find(run => run.id === message.runId)?.activity !== 'compacting' && <ChatWaiting />}
-          {data.runs.find(run => run.id === message.runId)?.activity === 'compacting' && message.role === 'assistant'
-            ? <ChatWaiting label="Compacting conversation…" showLabel />
-            : message.status === 'streaming' && message.content && <ChatWaiting label="Ari is writing…" />}
-          {message.status === 'failed' && <div className="message-error" role="alert"><p>{message.error || 'Ari could not finish this reply.'}</p>{data.runs.find(run => run.id === message.runId)?.requestId === latestUserId ? <Button variant="ghost" disabled={busy} onClick={() => retry(message.runId)}><RefreshCw size={14} /> Retry message</Button> : <Button variant="ghost" onClick={() => { textarea.current?.focus(); textarea.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Continue the conversation <ArrowRight size={14} /></Button>}</div>}
-          {message.proposalIds?.map(id => { const proposal = data.proposals.find(item => item.id === id); return proposal && <ProposalCard key={id} proposal={proposal} refresh={refresh} discuss={discuss} openCurriculum={openCurriculum} />; })}
-        </div>)}
+        {data.messages.filter(message => !message.proactive || message.deliveredAt).map(message => {
+          const source = reflectionSources.get(message.id);
+          return <div id={'main-message-' + message.id} tabIndex={message.id === targetMessageId ? -1 : undefined} className={'main-message ' + (message.role === 'user' ? 'outgoing-exchange' : '')} key={message.id}>
+            {source && <Button variant="plain" className="reflection-link reflection-source" onClick={() => openReflection(source.id)}>
+              From your reflection · {source.title}
+            </Button>}
+            {message.content || message.snapshotIds?.length ? <ChatMessage author={message.role} createdAt={message.createdAt} busy={message.status === 'streaming' || message.status === 'pending'}
+              details={(!!message.materialIds?.length || (message.role === 'assistant' && data.events.some(event => event.runId === message.runId && event.type === 'tool_call'))) ? <>
+                {!!message.materialIds?.length && <div className="message-materials"><Paperclip size={12} />{message.materialIds.map(id => data.materials.find(item => item.id === id)?.title || 'Material').join(', ')}</div>}
+                {message.role === 'assistant' && <ToolActivity data={data} runId={message.runId} running={message.status === 'pending' || message.status === 'streaming'} />}
+              </> : undefined}>
+              <Markdown>{message.content}</Markdown>
+              <PhotoSet ids={message.snapshotIds || []} label="Message photo" onOpen={viewer.openPhoto} />
+            </ChatMessage> : message.status !== 'failed' && data.runs.find(run => run.id === message.runId)?.activity !== 'compacting' && <ChatWaiting />}
+            {data.runs.find(run => run.id === message.runId)?.activity === 'compacting' && message.role === 'assistant'
+              ? <ChatWaiting label="Compacting conversation…" showLabel />
+              : message.status === 'streaming' && message.content && <ChatWaiting label="Ari is writing…" />}
+            {message.status === 'failed' && <div className="message-error" role="alert"><p>{message.error || 'Ari could not finish this reply.'}</p>{data.runs.find(run => run.id === message.runId)?.requestId === latestUserId ? <Button variant="ghost" disabled={busy} onClick={() => retry(message.runId)}><RefreshCw size={14} /> Retry message</Button> : <Button variant="ghost" onClick={() => { textarea.current?.focus(); textarea.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Continue the conversation <ArrowRight size={14} /></Button>}</div>}
+            {message.proposalIds?.map(id => { const proposal = data.proposals.find(item => item.id === id); return proposal && <ProposalCard key={id} proposal={proposal} refresh={refresh} discuss={discuss} openCurriculum={openCurriculum} />; })}
+          </div>;
+        })}
         {pending.filter(item => !data.messages.some(message => message.id === item.request.id)).map(item => <div className="main-message outgoing-exchange" key={item.request.id}><ChatMessage author="user" createdAt={item.createdAt} arriving><Markdown>{item.request.message}</Markdown><PhotoSet ids={item.request.images || item.request.snapshotIds || []} label="Message photo" onOpen={viewer.openPhoto} /></ChatMessage>
           {item.status === 'failed' ? <div className="message-error" role="alert"><p>{item.error}</p><Button variant="ghost" disabled={busy} onClick={() => void deliver(item)}><RefreshCw size={14} />Retry message</Button></div> : <ChatWaiting label="Sending…" />}
         </div>)}

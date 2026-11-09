@@ -22,17 +22,19 @@ type StudyDeskProps = {
   tutorReady: boolean; nativeAvailable: boolean; generationBusy: boolean;
   generateExercise: (moduleId: string, difficulty: Difficulty) => Promise<void>;
   selectExercise: (id: string) => void; showLesson: (id: string) => void; openPhoto: OpenPhoto;
+  reflectionNoteId?: string; openNote: (messageId: string) => void;
   reviewStatus: string; reviewBusy: boolean; actionError: string;
 };
 export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLesson, tutorReady, nativeAvailable,
-  generationBusy, generateExercise, selectExercise, showLesson, openPhoto, reviewStatus, reviewBusy, actionError }: StudyDeskProps) {
+  generationBusy, generateExercise, selectExercise, showLesson, openPhoto, reflectionNoteId, openNote, reviewStatus, reviewBusy, actionError }: StudyDeskProps) {
   const { photos, draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
     preparingGrade, sendError, pageBusy, pages, pageError, retryPages, conversation, progress,
-    confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionMessage,
+    confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionError, latestReflection,
     setCameraExpanded, expandButtonRef, conversationRef, composerRef, shouldFollowConversation,
     camera, pageAttachedToPendingMessage, addPage, removePage, send, deliverMessage, onUpload, saveReflection } = desk;
   const { cameraPlaceholder, cameraControls } = deskCameraContent(desk, nativeAvailable);
   const askPlot = usePlotAsk({ setDraft, photos, focus: composerRef });
+  const reflectionSaved = latestReflection && latestReflection.confidence === confidence && (latestReflection.notes || '') === reflectionNotes.trim();
   return <PlotAskContext.Provider value={askPlot}><section className="page desk-page">
     <PageHeader title={exercise.title} actions={
       <span className={'tutor-status ' + (tutorReady ? 'ready' : '')}>{tutorReady ? 'Tutor ready' : 'Tutor unavailable'}</span>
@@ -156,7 +158,13 @@ export function StudyDesk({ desk, exercise, currentModule, nextExercise, nextLes
           <Button variant="primary" loading={reflectionBusy} disabled={confidence === null || reflectionBusy || !!pageBusy || !!sendMode} onClick={() => void saveReflection()}>
             {reflectionBusy ? 'Saving…' : progress?.status === 'completed' ? 'Save another reflection' : 'Mark complete and save'} <Check size={16} />
           </Button>
-          {reflectionMessage && <p className="status-line" role="status">{reflectionMessage}</p>}
+          {reflectionError && <p className="inline-error" role="alert">{reflectionError}</p>}
+          {reflectionSaved && !reflectionError && !reflectionBusy && <div className="reflection-receipt" role="status">
+            <span><Check size={13} aria-hidden="true" /> Reflection saved</span>
+            {reflectionNoteId && <><span aria-hidden="true">·</span><Button variant="plain" className="reflection-link" onClick={() => openNote(reflectionNoteId)}>
+              Read Ari’s note <ArrowRight size={13} aria-hidden="true" />
+            </Button></>}
+          </div>}
           {reviewStatus && <p className="status-line loading-status" role="status">{reviewBusy && <AriSun size={28} />}{reviewStatus}</p>}
           {(nextExercise || nextLesson || currentModule) && <div className="next-actions">
             {nextExercise && <Tooltip>

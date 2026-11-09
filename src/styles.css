@@ -134,6 +134,11 @@ p { line-height: 1.55; }
 .confidence-heading output[data-chosen] { color: var(--ari-accent); }
 .reflection-card label span { color: var(--ari-muted); font-weight: 400; }
 .reflection-card textarea { margin-top: 8px; }
+.reflection-receipt { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; margin-top: 10px; color: var(--ari-muted); font-size: .77rem; }
+.reflection-receipt > span, .reflection-link { display: inline-flex; align-items: center; gap: 4px; }
+.reflection-link { border: 0; padding: 0; background: transparent; color: var(--ari-accent); font: inherit; text-align: left; }
+.reflection-link:hover { text-decoration: underline; }
+.reflection-source { display: block; justify-self: start; color: var(--ari-muted); font-size: .77rem; overflow-wrap: anywhere; }
 .status-line { color: var(--ari-success); font-size: .77rem; margin: 10px 0 0; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 20px 13px; }
 .panel-heading h2 { margin: 0; }
@@ -405,6 +410,7 @@ p { line-height: 1.55; }
 .main-chat-empty > div { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .main-chat-empty .ui-button-outline { font-size: .74rem; font-weight: 500; }
 .main-message { display: grid; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.main-message[tabindex="-1"] { scroll-margin-block: 12px; }
 .main-message:last-child { margin-bottom: 0; }
 .provider-note { color: var(--ari-accent); font-size: .73rem; margin: 12px 0 0; }
 .proposal-card { background: var(--ari-accent-soft); border-left: 3px solid var(--ari-accent); padding: 18px 20px; max-width: 100%; }

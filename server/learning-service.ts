@@ -89,11 +89,21 @@ export class LearningService {
     await this.ensureOnboarding();
     const d = await this.store.readLearning();
     const personalization = await this.workspace.coreView();
-    return { personalization, curricula: d.curricula, lessons: d.lessons, exercises: d.exercises, messages: d.messages.filter(m => !m.proactive || m.deliveredAt).map(m =>
+    const reflectionRuns = new Map(d.runs.filter(run => run.kind === 'review' && !run.assessmentId)
+      .map(run => [run.id, run.requestId]));
+    const reflectionNotes: LearningView['reflectionNotes'] = [];
+    let unreadCount = 0;
+    for (const message of d.messages) {
+      if (!message.proactive) continue;
+      const reflectionId = message.runId && reflectionRuns.get(message.runId);
+      if (reflectionId) reflectionNotes.push({ reflectionId, messageId: message.id });
+      if (!message.readAt && (message.deliveredAt || reflectionId)) unreadCount++;
+    }
+    return { personalization, reflectionNotes, curricula: d.curricula, lessons: d.lessons, exercises: d.exercises, messages: d.messages.filter(m => !m.proactive || m.deliveredAt).map(m =>
       this.streaming.has(m.id) && (m.status === 'pending' || m.status === 'streaming') ? { ...m, content: this.streaming.get(m.id)!, status: 'streaming' as const } : m),
       proposals: d.proposals, memory: { content: personalization.user.content, revision: personalization.user.revision, updatedAt: personalization.user.updatedAt, updatedBy: personalization.user.actor === 'ari' ? 'ari' : 'user' }, materials: d.materials.map(({ text: _text, sourceData: _sourceData, ...m }) => m), runs: d.runs.map(({ context: _context, contextTokens: _tokens, completedText: _completedText, ...r }) => r),
       events: d.events.map(({ data: _data, ...event }) => event),
-      unreadCount: d.messages.filter(m => m.proactive && m.deliveredAt && !m.readAt).length,
+      unreadCount,
       provider: { configured: Boolean(this.provider), model: this.provider?.model ?? `${process.env.OPENAI_MAIN_MODEL || 'gpt-6-astra'} · high` } };
   }
   async recover() {
@@ -614,8 +624,8 @@ export class LearningService {
     const reflection = state.reflections.find(r => r.id === run.requestId);
     if (!reflection || d.reviewedEvidenceIds.includes(reflection.id)) return;
     const exercise = d.exercises.find(e => e.id === reflection.exerciseId) ?? state.generatedExercises.find(e => e.id === reflection.exerciseId);
-    const sessions = state.sessions.filter(s => s.exerciseId === reflection.exerciseId).slice(-8);
-    const raw = await this.generate('Review this saved reflection and actual exercise evidence. Propose a concise useful between-exercise message only if warranted; otherwise return an empty message. Return concise observations in memory, grounded only in this reflection and its actual evidence, marking uncertain inferences with topic/date/evidence IDs. These observations are saved to a scoped dated memory file; never rewrite USER.md or TUTOR.md from a background review. Do not infer mastery from confidence or one score, and do not change curricula. Never refer to image contents you have not been given. Avoid repeating the prior pending suggestions.', { profile: profileDefaults(state.profile), reflection: { ...reflection, snapshotId: undefined, snapshotIds: undefined }, exercise, sessions: sessions.map(({ snapshotId: _id, snapshotIds: _ids, ...s }) => s), priorSuggestions: d.messages.filter(m => m.proactive).slice(-5).map(m => m.content) }, jsonSchema(analysisSchema));
+    const sessions = state.sessions.filter(s => s.exerciseId === reflection.exerciseId && s.createdAt <= reflection.createdAt).slice(-8);
+    const raw = await this.generate('Review this saved reflection and actual exercise evidence. If there is a useful next step, write a short note the learner can read days later. Open with a specific observation about the concept, their work, or what they wrote in this reflection. Use only evidence provided here. A learner reading the opening on its own should know what you mean. Otherwise return an empty message. Return concise observations in memory, grounded only in this reflection and its actual evidence, marking uncertain inferences with topic/date/evidence IDs. These observations are saved to a scoped dated memory file; never rewrite USER.md or TUTOR.md from a background review. Do not infer mastery from confidence or one score, and do not change curricula. Never refer to image contents you have not been given. Avoid repeating the prior pending suggestions.', { profile: profileDefaults(state.profile), reflection: { ...reflection, snapshotId: undefined, snapshotIds: undefined }, exercise, sessions: sessions.map(({ snapshotId: _id, snapshotIds: _ids, ...s }) => s), priorSuggestions: d.messages.filter(m => m.proactive).slice(-5).map(m => m.content) }, jsonSchema(analysisSchema));
     const result = analysisSchema.parse(raw);
     if (result.memory.trim()) {
       const path = `memories/${reflection.createdAt.slice(0, 10)}-${reflection.id}.md`;

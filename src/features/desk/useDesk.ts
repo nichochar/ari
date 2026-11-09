@@ -40,7 +40,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   const [reflectionNotes, setReflectionNotes] = useState('');
   const [reflectionBusy, setReflectionBusy] = useState(false);
   const reflectionBusyRef = useRef(false);
-  const [reflectionMessage, setReflectionMessage] = useState('');
+  const [reflectionError, setReflectionError] = useState('');
   const [cameraExpanded, setCameraExpanded] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeCameraRef = useRef<HTMLButtonElement>(null);
@@ -57,6 +57,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   }, [active, camera.stop]);
   useEffect(() => () => gradeCaptureRef.current?.abort(), []);
   const progress = exercise ? state?.progress[exercise.id] : undefined;
+  const latestReflection = state?.reflections.filter(item => item.exerciseId === selectedId).at(-1);
   const reflectionReady = !!state && !!exercise;
   const pages = useMemo(() => (state?.exercisePages || []).filter(item => item.exerciseId === selectedId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [state?.exercisePages, selectedId]);
@@ -87,9 +88,8 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   useEffect(() => {
     if (!reflectionReady) return;
     setConfidence(progress?.confidence || null);
-    const reflection = [...(state?.reflections || [])].reverse().find(item => item.exerciseId === selectedId);
-    setReflectionNotes(reflection?.notes || '');
-    setReflectionMessage('');
+    setReflectionNotes(latestReflection?.notes || '');
+    setReflectionError('');
   }, [selectedId, reflectionReady]); // Deliberately do not reset notes when state refreshes.
 
   function cancelCapture() { gradeCaptureRef.current?.abort(); }
@@ -276,12 +276,12 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     if (!exercise || confidence === null || reflectionBusyRef.current || pageBusyRef.current || sendBusyRef.current) return;
     reflectionBusyRef.current = true;
     setReflectionBusy(true);
-    setReflectionMessage('');
+    setReflectionError('');
     const exerciseId = exercise.id;
     try {
       const image = uploadedImage || (camera.active ? camera.capture() : null);
       if (camera.active && !uploadedImage && !image) {
-        setReflectionMessage('The live frame is not ready yet. Wait until the paper appears, then save again.');
+        setReflectionError('The live frame is not ready yet. Wait until the paper appears, then save again.');
         return;
       }
       const result = await post<ReflectionResponse>('/api/reflections', {
@@ -294,16 +294,15 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
         progress: { ...current.progress, [exerciseId]: result.progress },
         reflections: [...current.reflections, result.reflection],
       } : current);
-      if (selectedIdRef.current === exerciseId) setReflectionMessage('Reflection saved. This exercise is complete.');
       onIdle();
     } catch (error) {
-      if (selectedIdRef.current === exerciseId) setReflectionMessage('Could not save reflection: ' + errorText(error));
+      if (selectedIdRef.current === exerciseId) setReflectionError('Could not save reflection: ' + errorText(error));
     } finally { reflectionBusyRef.current = false; setReflectionBusy(false); }
   }
 
   return { photos, draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName, sendMode,
     preparingGrade, sendError, pageBusy, pages, pageError, retryPages, conversation, progress,
-    confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionMessage,
+    confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionError, latestReflection,
     cameraExpanded, setCameraExpanded, expandButtonRef, closeCameraRef, conversationRef, composerRef,
     shouldFollowConversation, camera, pageAttachedToPendingMessage, addPage, removePage,
     send, deliverMessage, onUpload, saveReflection, cancelCapture, invalidateUpload, resetForExercise };

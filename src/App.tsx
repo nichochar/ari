@@ -25,6 +25,7 @@ export default function App() {
   const navigation = useNavigation();
   const { view, setView, setMobileMenu, chatFocusId, setChatFocusId, chatStarter, setChatStarter, onboardingNavigationChecked } = navigation;
   const [actionError, setActionError] = useState('');
+  const [jumpTarget, setJumpTarget] = useState('');
   const learning = useLearning(view === 'chat', view !== 'desk' && view !== 'assessments');
   const study = useStudy(learning.data);
   const { state, selectedId, exercise, currentModule, nextExercise, nextLesson } = study;
@@ -34,6 +35,16 @@ export default function App() {
   const journal = useJournal(state, study.setState);
   const settings = useSettings(state, study.setState, setActionError);
   const photos = usePhotoViewer();
+  const reflectionSources = useMemo(() => {
+    const reflections = new Map(state?.reflections.map(item => [item.id, item]));
+    const titles = new Map(study.catalog.map(item => [item.id, item.title]));
+    const sources = new Map<string, { id: string; title: string }>();
+    for (const note of learning.data?.reflectionNotes ?? []) {
+      const reflection = reflections.get(note.reflectionId);
+      if (reflection) sources.set(note.messageId, { id: reflection.id, title: titles.get(reflection.exerciseId) || 'Exercise reflection' });
+    }
+    return sources;
+  }, [state?.reflections, study.catalog, learning.data?.reflectionNotes]);
   const memoryRevision = useMemo(() => [
     ...(learning.data?.runs.filter(run => run.status === 'complete').map(run => run.id) ?? []),
     ...(learning.data?.events.filter(event => event.type === 'tool_result' && ['workspace_write', 'workspace_edit', 'workspace_move', 'workspace_delete'].includes(event.name ?? '')).map(event => event.id) ?? []),
@@ -75,11 +86,13 @@ export default function App() {
     setView('path');
   }
   function openChat(focusId: string, starter?: string) {
+    setJumpTarget('');
     setChatFocusId(focusId);
     if (starter !== undefined) setChatStarter(starter);
     setView('chat');
   }
-  function navigate(item: View) {
+  function navigate(item: View, target = '') {
+    setJumpTarget(target);
     onboardingNavigationChecked.current = true;
     if (item !== 'desk') desk.cancelCapture();
     setView(item);
@@ -99,9 +112,11 @@ export default function App() {
     {view === 'desk' && exercise && <StudyDesk desk={desk} exercise={exercise} currentModule={currentModule}
       nextExercise={nextExercise} nextLesson={nextLesson} tutorReady={!!study.health?.aiConfigured} nativeAvailable={study.nativeAvailable}
       generationBusy={path.generationBusy} generateExercise={path.generateExercise} selectExercise={selectExercise} showLesson={showLesson}
-      openPhoto={photos.openPhoto} reviewStatus={journal.reviewStatus} reviewBusy={journal.reviewBusy} actionError={actionError} />}
+      openPhoto={photos.openPhoto} reflectionNoteId={learning.data?.reflectionNotes?.find(note => note.reflectionId === desk.latestReflection?.id)?.messageId}
+      openNote={id => navigate('chat', id)} reviewStatus={journal.reviewStatus} reviewBusy={journal.reviewBusy} actionError={actionError} />}
     {view === 'chat' && <section className="page">
-      {learning.data ? <MainConversation data={learning.data} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
+      {learning.data ? <MainConversation data={learning.data} targetMessageId={jumpTarget} reflectionSources={reflectionSources}
+        openReflection={id => navigate('journal', id)} pending={learning.pending} deliver={learning.deliver} refresh={learning.refresh} focusId={chatFocusId} setFocusId={setChatFocusId} openCurriculum={openCurriculum} starter={chatStarter} clearStarter={() => setChatStarter('')} />
         : <><PageHeader title="Talk with Ari" /><div className="loading-screen page-loading" role={learning.error ? undefined : 'status'}>
           {learning.error ? <AriMark size={40} /> : <AriSun size={72} />}
           <h2>{learning.error ? 'Could not open your conversation' : 'Opening your conversation…'}</h2>
@@ -117,7 +132,7 @@ export default function App() {
     </section>}
     {view === 'path' && <LearningPath path={path} state={state} catalog={study.catalog} learning={learning}
       selectExercise={selectExercise} openCurriculum={openCurriculum} openChat={openChat} actionError={actionError} />}
-    {view === 'journal' && <Journal journal={journal} state={state} catalog={study.catalog} allModules={study.allModules}
+    {view === 'journal' && <Journal targetReflectionId={jumpTarget} journal={journal} state={state} catalog={study.catalog} allModules={study.allModules}
       selectExercise={selectExercise} showLesson={showLesson} openPhoto={photos.openPhoto} actionError={actionError} />}
     {view === 'settings' && <Settings settings={settings} learning={learning} memoryRevision={memoryRevision}
       discuss={text => openChat('', text)} actionError={actionError} />}

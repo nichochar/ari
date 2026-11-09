@@ -28,6 +28,7 @@ export interface CodexLearningContext {
   inputTokens: number; tools: ToolOutcome[]; messages: Message[];
   /** Actual immutable dynamic catalog, distinct from tools added through MCP. */
   dynamicToolNames?: string[];
+  instructionsHash?: string;
 }
 export const isCodexLearningContext = (v: unknown): v is CodexLearningContext => {
   const m = object(v); return m.type === 'ari_codex_context' && m.version === 1 && typeof m.threadId === 'string';
@@ -133,9 +134,18 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
     } catch (cause) { c.close(); throw cause; }
   })().catch(cause => { clientPromise = undefined; throw failure(cause); });
   const settings = (c: CodexAppServerClient, instructions: string, extraConfig: ObjectValue = {}) => ({ model, cwd, approvalPolicy: 'never', sandbox: 'read-only',
-    baseInstructions: instructionSuffix, developerInstructions: instructions + instructionSuffix,
+    baseInstructions: instructions + instructionSuffix, developerInstructions: '',
     config: { ...c.threadConfig, model_reasoning_effort: effort,
       mcp_servers: { ...object(c.threadConfig.mcp_servers), ari_workspace: disabledWorkspaceMcpServer(), ...object(extraConfig.mcp_servers) } }, environments: [], runtimeWorkspaceRoots: [] });
+  async function syncInstructions(c: CodexAppServerClient, marker: CodexLearningContext, instructions: string) {
+    const current = instructions + instructionSuffix;
+    if (marker.instructionsHash === hash(current)) return;
+    // Fork/resume settings do not replace developer messages in native history.
+    await c.request('thread/inject_items', { threadId: marker.threadId, items: [
+      { type: 'message', role: 'developer', content: [{ type: 'input_text', text: current }] },
+    ] });
+    marker.instructionsHash = hash(current);
+  }
   function checkModel(response: unknown) {
     const r = object(response); const actual = r.model ?? object(r.thread).model;
     if (typeof actual === 'string' && actual !== model)
@@ -176,6 +186,8 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
     checkModel(response);
     const marker: CodexLearningContext = { type: 'ari_codex_context', version: 1, threadId: response.thread.id,
       state: 'ready', ...(runKey !== undefined ? { runKey } : {}), pendingInput,
+      ...(!previous ? { instructionsHash: hash(instructions + instructionSuffix) }
+        : previous.instructionsHash ? { instructionsHash: previous.instructionsHash } : {}),
       dynamicToolNames: previous ? previous.dynamicToolNames ?? [] : tools.map(tool => tool.name),
       ...(previous?.completedTurnId !== undefined ? { completedTurnId: previous.completedTurnId } : {}),
       inputTokens: previous?.inputTokens ?? 0, tools: [], messages: [] };
@@ -442,6 +454,8 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
             if (turn && turn.status === 'inProgress') { marker.turnId = String(turn.id); marker.state = 'pending'; await checkpoint(); return; }
             if (turn) { collect(marker, turn); delete marker.pendingInput; }
           }
+          await syncInstructions(c, marker, instructions);
+          await checkpoint();
           const response = await c.request<{ turn: { id: string } }>('turn/start', {
             threadId: marker.threadId, model, effort, clientUserMessageId: runKey,
             ...(request.outputSchema ? { outputSchema: outputSchema(request.outputSchema) } : {}),
@@ -465,6 +479,7 @@ export function createCodexLearningProvider(options: CodexLearningProviderOption
         if (!input.some(isCodexLearningContext) && !configuredTools.length)
           throw error('CODEX_TOOLS_UNCONFIGURED', 'Ari’s Codex tool definitions are required before importing this saved context. Its history is preserved.');
         const { marker } = await establish(c, input, instructions, configuredTools);
+        await syncInstructions(c, marker, instructions);
         await observe(c, marker, undefined, () => c.request('thread/compact/start', { threadId: marker.threadId }), true);
         marker.tools = []; marker.messages = []; delete marker.runKey; delete marker.turnId;
         return [marker];

@@ -18,14 +18,34 @@ type Editing = number | 'new' | null;
 
 interface ParameterRow { row: RowModel; content: HTMLElement; slider: SliderView; }
 
+const inlineRowLimit = 3;
+const visibleSliderLimit = 2;
+let nextListId = 0;
+
 export class Rows {
   readonly element = element('div', 'plot-rows');
+  private readonly controls = element('div', 'plot-row-controls');
+  private readonly toggle = element('button', 'plot-rows-toggle');
+  private readonly list = element('div', 'plot-row-list');
+  private readonly panel = element('div', 'plot-row-panel', this.list);
+  private expanded?: boolean;
+  private expressionCount = 0;
   private models: RowModel[] = [];
   private editing: Editing = null;
   private pendingFocus: string | null = null;
   private readonly parameters = new Map<string, ParameterRow>();
 
-  constructor(private readonly options: RowsOptions) {}
+  constructor(private readonly options: RowsOptions) {
+    this.panel.id = `ari-plot-expressions-${++nextListId}`;
+    this.toggle.type = 'button';
+    this.toggle.setAttribute('aria-controls', this.panel.id);
+    this.toggle.addEventListener('click', () => {
+      this.element.classList.add('plot-rows-animated');
+      this.expanded = this.panel.inert;
+      this.updateDisclosure();
+    });
+    this.element.append(this.controls, this.toggle, this.panel);
+  }
 
   render(models: RowModel[]): void {
     this.models = models;
@@ -34,13 +54,32 @@ export class Rows {
       ?? (active instanceof HTMLElement && this.element.contains(active) ? active.dataset.plotFocus ?? null : null);
     this.pendingFocus = null;
     this.parameters.clear();
-    const children: HTMLElement[] = models.map(row => this.editing === row.line ? this.editorRow(row.line, row.text) : this.row(row));
+    const collapsible = models.length > inlineRowLimit;
+    const controls: HTMLElement[] = [];
+    const children: HTMLElement[] = [];
+    for (const row of models) {
+      const node = this.editing === row.line ? this.editorRow(row.line, row.text) : this.row(row);
+      if (collapsible && row.slider && controls.length < visibleSliderLimit) controls.push(node);
+      else children.push(node);
+    }
+    this.expressionCount = children.length;
     if (this.editing === 'new') children.push(this.editorRow('new', ''));
     if (!this.options.readOnly) children.push(this.addRow());
-    this.element.replaceChildren(...children);
+    this.controls.replaceChildren(...controls);
+    this.list.replaceChildren(...children);
+    this.toggle.hidden = !collapsible;
+    this.updateDisclosure();
     const target = focus ? this.element.querySelector<HTMLElement>(`[data-plot-focus="${CSS.escape(focus)}"]`) : null;
-    target?.focus({ preventScroll: true });
+    if (target && this.panel.inert && this.panel.contains(target)) this.toggle.focus({ preventScroll: true });
+    else target?.focus({ preventScroll: true });
     if (target instanceof HTMLInputElement && target.type === 'text') target.setSelectionRange(target.value.length, target.value.length);
+  }
+
+  private updateDisclosure(): void {
+    const open = this.toggle.hidden || (this.expanded ?? this.models.some(row => row.errors.length > 0));
+    this.panel.inert = !open;
+    this.toggle.setAttribute('aria-expanded', String(open));
+    this.toggle.textContent = open ? 'Hide expressions' : `Show ${this.expressionCount} expressions`;
   }
 
   showValue(name: string, value: number): void {
@@ -125,6 +164,7 @@ export class Rows {
   }
 
   private edit(target: Editing): void {
+    if (target === 'new') this.expanded = true;
     this.editing = target;
     this.pendingFocus = 'editor';
     this.render(this.models);

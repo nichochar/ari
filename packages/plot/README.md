@@ -45,6 +45,8 @@ plot.setHeight(480);
 plot.destroy();
 ```
 
+Plots with more than three expression rows start with the list collapsed. Up to two sliders stay visible below the graph. Open **Show expressions** to edit the other rows. Plots with errors start expanded so the affected lines are visible.
+
 React: `import { Plot } from 'ari-plot/react'` and render `<Plot source={...} onSourceChange={...} />` with the same options as props.
 
 Give a model the language with `import { promptReference } from 'ari-plot/prompt'` and ask it to answer with ```plot fences; this entry point has no browser dependencies.

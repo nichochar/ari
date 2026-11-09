@@ -345,6 +345,7 @@ test('independent lesson rejection feeds its precise reason into one revision an
     assert.ok(preparationPrompts.every(prompt => prompt.includes('without giving the final answer or complete construction, either separately or collectively')));
     assert.ok(preparationPrompts.every(prompt => prompt.includes('Preserve any lesson duration explicitly accepted in the lesson, curriculum or proposal; it takes precedence over a generic session-duration preference')));
     assert.ok(verificationPrompts.every(prompt => prompt.includes('reject points for unobservable physical or audio performance, tapping or timing')));
+    assert.ok([...preparationPrompts, ...verificationPrompts].every(prompt => prompt.includes(promptReference)), 'writers, reviewers and revisions share the plot language');
   } finally { await fx.close(); }
 });
 

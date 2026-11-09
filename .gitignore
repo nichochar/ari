@@ -40,3 +40,4 @@ audit/
 
 # Git worktrees the desktop app creates inside the checkout.
 /.claude/worktrees/
+

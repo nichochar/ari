@@ -104,6 +104,8 @@ test('persistent Codex run streams text, checkpoints before turn, uses actual la
   const start = c.calls.find(v => v.method === 'thread/start')!.params;
   assert.equal(start.model, 'gpt-6-astra'); assert.equal(start.historyMode, 'paginated'); assert.equal(start.allowProviderModelFallback, false);
   assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never');
+  assert.match(start.baseInstructions, /Tutor with brief hints/);
+  assert.equal(start.developerInstructions, '');
   assert.deepEqual(start.dynamicTools, [{ type: 'function', name: 'read_memory', description: tool.description, inputSchema: tool.parameters }]);
   const turn = c.calls.find(v => v.method === 'turn/start')!.params;
   assert.equal(turn.effort, 'high'); assert.equal(turn.clientUserMessageId, 'run-1');
@@ -115,10 +117,32 @@ test('new turn forks committed context and injects proactive assistant messages 
   const second = await p.run({ ...request([...first.context!, { role: 'assistant', content: 'A saved background observation.' }, { role: 'user', content: 'What follows?' }]), runKey: 'run-2', instructions: 'Updated learner memory revision 2' });
   const fork = c.calls.find(v => v.method === 'thread/fork')!.params;
   assert.equal(fork.threadId, (first.context![0] as CodexLearningContext).threadId);
-  assert.match(fork.developerInstructions, /revision 2/);
-  assert.equal(c.calls.filter(v => v.method === 'thread/inject_items').length, 1);
+  assert.match(fork.baseInstructions, /revision 2/);
+  const injected = c.calls.filter(v => v.method === 'thread/inject_items');
+  assert.equal(injected.length, 2);
+  assert.equal(injected[1].params.items[0].role, 'developer');
+  assert.match(injected[1].params.items[0].content[0].text, /revision 2/);
   assert.deepEqual(c.calls.find(v => v.method === 'thread/inject_items')!.params.items, [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A saved background observation.' }] }]);
   assert.notEqual((second.context![0] as CodexLearningContext).threadId, fork.threadId);
+  await p.run({ ...request([...second.context!, { role: 'user', content: 'Continue.' }]), runKey: 'run-3', instructions: 'Updated learner memory revision 2' });
+  assert.equal(c.calls.filter(v => v.method === 'thread/inject_items').length, 2, 'unchanged instructions must not grow native history');
+});
+
+test('legacy ready checkpoints receive current instructions before starting, while completed retries stay unchanged', async () => {
+  const c = new FakeCodex(); const p = provider(c); const first = await p.run(request());
+  const legacy = structuredClone(first.context![0]) as CodexLearningContext;
+  delete legacy.instructionsHash;
+  legacy.state = 'ready'; legacy.messages = []; legacy.pendingInput = [{ type: 'text', text: 'Continue.', text_elements: [] }];
+  const result = await p.run({ ...request([legacy]), refreshInstructions: async () => 'Updated tutor preferences' });
+  const injected = c.calls.filter(v => v.method === 'thread/inject_items');
+  assert.equal(injected.length, 1);
+  assert.equal(injected[0].params.items[0].role, 'developer');
+  assert.match(injected[0].params.items[0].content[0].text, /Updated tutor preferences/);
+  assert.ok(c.calls.indexOf(injected[0]) < c.calls.indexOf(c.calls.filter(v => v.method === 'turn/start').at(-1)!));
+  assert.ok((result.context![0] as CodexLearningContext).instructionsHash);
+  await p.run({ ...request(result.context), instructions: 'Changed during recovery' });
+  assert.equal(c.calls.filter(v => v.method === 'thread/inject_items').length, 1);
+  assert.equal(c.calls.filter(v => v.method === 'turn/start').length, 2);
 });
 
 test('native automatic compaction keeps streaming and recovery without an app threshold override', async () => {
@@ -230,7 +254,8 @@ test('native compaction forks context, includes proactive messages and confirms 
   const marker = result[0] as CodexLearningContext;
   assert.equal(marker.inputTokens, 41); assert.equal(marker.state, 'complete'); assert.equal(marker.messages.length, 0);
   assert.equal(c.calls.filter(v => v.method === 'thread/compact/start').length, 1);
-  assert.equal(c.calls.filter(v => v.method === 'thread/inject_items').length, 1);
+  assert.equal(c.calls.filter(v => v.method === 'thread/inject_items').length, 2);
+  assert.match(c.calls.find(v => v.method === 'thread/fork')!.params.baseInstructions, /Keep learner instructions current/);
   assert.notEqual(marker.threadId, (first.context![0] as CodexLearningContext).threadId);
   assert.ok(!c.calls.some(v => 'history' in v.params || 'experimentalRawEvents' in v.params));
 });
@@ -542,7 +567,7 @@ test('structured interactive tutor preserves selected model, effort and images, 
   assert.equal(toolCalls, 1);
   const start = c.calls.find(call => call.method === 'thread/start')!.params;
   assert.equal(start.ephemeral, true); assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.allowProviderModelFallback, false);
-  assert.match(start.developerInstructions, /Current USER.md and TUTOR.md/);
+  assert.match(start.baseInstructions, /Current USER.md and TUTOR.md/);
   assert.equal(start.config.model_reasoning_effort, 'medium');
   assert.deepEqual(start.config.mcp_servers.ari_workspace, { command: process.execPath, args: [], enabled: false });
   const turn = c.calls.find(call => call.method === 'turn/start')!.params;
@@ -608,12 +633,14 @@ test('legacy native markers get a stable MCP bridge and durable mutations withou
   const result = await p.run(r);
   assert.equal(sideEffects, 1);
   const fork = c.calls.find(call => call.method === 'thread/fork')!.params;
-  assert.match(fork.developerInstructions, /Additional Ari workspace tools are available through ari_workspace MCP/);
+  assert.match(fork.baseInstructions, /Additional Ari workspace tools are available through ari_workspace MCP/);
   assert.equal(fork.threadId, legacy.threadId);
   assert.deepEqual(fork.config.mcp_servers.ari_workspace, config.mcp_servers.ari_workspace);
   assert.deepEqual(fork.config.mcp_servers.unrelated, { enabled: false });
   assert.equal(c.calls.filter(call => call.method === 'thread/start').length, 1, 'native history is forked, never recreated');
-  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 0, 'no synthetic transcript reconstruction');
+  const injections = c.calls.filter(call => call.method === 'thread/inject_items');
+  assert.equal(injections.length, 1);
+  assert.equal(injections[0].params.items[0].role, 'developer', 'only current instructions are injected, never a reconstructed transcript');
   assert.deepEqual((result.context![0] as CodexLearningContext).dynamicToolNames, [], 'MCP tools do not pretend to join the immutable dynamic catalog');
   assert.equal((result.context![0] as CodexLearningContext).tools[0].complete, true);
   const resumed = await p.run({ ...r, input: result.context! });
@@ -636,7 +663,7 @@ test('legacy native markers get a stable MCP bridge and durable mutations withou
   assert.equal(following.text, 'Updated in the new turn.');
   assert.equal(sideEffects, 2); assert.equal(bridgeCalls, 1);
   assert.equal(c.calls.filter(call => call.method === 'thread/start').length, 1);
-  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 0);
+  assert.equal(c.calls.filter(call => call.method === 'thread/inject_items').length, 1);
   assert.deepEqual((following.context![0] as CodexLearningContext).dynamicToolNames, []);
   c.close(); assert.equal(closed, 1);
 });

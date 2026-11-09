@@ -110,6 +110,39 @@
 
 .plot-root .plot-rows { padding: 4px 8px; border-top: 1px solid var(--plot-border); font-size: 14px; }
 
+.plot-root .plot-rows-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--plot-label);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.plot-root .plot-rows-toggle[hidden] { display: none; }
+.plot-root .plot-rows-toggle::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.plot-root .plot-rows-toggle[aria-expanded="true"]::before { transform: rotate(45deg); }
+.plot-root .plot-row-panel { display: grid; grid-template-rows: 1fr; }
+.plot-root .plot-row-panel[inert] { grid-template-rows: 0fr; }
+.plot-root .plot-row-list { min-height: 0; overflow: hidden; margin: 0 -4px; padding: 0 4px; }
+.plot-root .plot-row-controls:not(:empty) + .plot-rows-toggle { border-top: 1px solid var(--plot-grid-minor); }
+@media (prefers-reduced-motion: no-preference) {
+  .plot-root .plot-rows-toggle::before { transition: transform 180ms ease-out; }
+  .plot-root .plot-rows-animated .plot-row-panel { transition: grid-template-rows 180ms ease-out; }
+}
+
 .plot-root .plot-row { padding: 6px 0; }
 .plot-root .plot-row + .plot-row { border-top: 1px solid var(--plot-grid-minor); }
 .plot-root .plot-row-add { padding: 4px 0; color: var(--plot-label); }
@@ -199,6 +232,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .plot-root .plot-rows-toggle:hover { color: var(--plot-fg); }
   .plot-root .plot-toolbar:hover { background: var(--plot-bg); }
   .plot-root .plot-icon-button:hover:not(:disabled) { background: color-mix(in srgb, var(--plot-fg) 8%, transparent); color: var(--plot-fg); }
   .plot-root .plot-swatch-button:hover { background: color-mix(in srgb, var(--plot-fg) 6%, transparent); }

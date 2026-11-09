@@ -15,6 +15,7 @@ test('native model preserves old context while newly added workspace read and wr
 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ari-native-model-workspace-'));
   const methods: string[] = [];
+  const injectedRoles: string[] = [];
   const nativeItems = new Set<string>(), inboundMethods = new Set<string>();
   const mcpOutcomes: unknown[] = [];
   let transport: CodexAppServerClient | undefined;
@@ -33,7 +34,11 @@ test('native model preserves old context while newly added workspace read and wr
         cwd: join(directory, 'cwd'), stateDir: join(directory, 'state'), requestTimeoutMs: 75_000 });
       transport = native;
       const request = native.request.bind(native);
-      native.request = async <T>(method: string, params: unknown, options?: { timeoutMs?: number }) => { methods.push(method); return request<T>(method, params, options); };
+      native.request = async <T>(method: string, params: unknown, options?: { timeoutMs?: number }) => {
+        methods.push(method);
+        if (method === 'thread/inject_items') injectedRoles.push(...(params as { items: { role: string }[] }).items.map(item => item.role));
+        return request<T>(method, params, options);
+      };
       native.subscribe(event => {
         const item = (event.params as { item?: { type?: string; server?: string; tool?: string; name?: string; status?: unknown; arguments?: unknown; result?: unknown; error?: unknown } })?.item;
         if (item?.type) nativeItems.add([item.type, item.server, item.tool, item.name].filter(value => typeof value === 'string').join(':'));
@@ -81,7 +86,7 @@ test('native model preserves old context while newly added workspace read and wr
     assert.deepEqual(upgraded.dynamicToolNames, ['read_memory'], 'new tools use MCP without replacing the native catalog');
     assert.equal(methods.filter(method => method === 'thread/start').length, 1);
     assert.equal(methods.filter(method => method === 'thread/fork').length, 1);
-    assert.equal(methods.filter(method => method === 'thread/inject_items').length, 0, 'native context is never reconstructed');
+    assert.deepEqual(injectedRoles, ['developer'], 'only updated instructions are appended; native history is never reconstructed');
     const resumed = await provider.run({ instructions: 'Synthetic checkpoint recovery.', input: second.context!, tools: [oldTool, workspaceTool, writeTool],
       runKey: 'synthetic-upgraded-catalog', executeTool: async () => { throw new Error('Completed smoke must not rerun a tool'); } });
     assert.equal(resumed.text, second.text);

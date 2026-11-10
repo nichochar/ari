@@ -433,21 +433,30 @@ export function createApp(options: AppOptions = {}) {
     const input = body(reflectionRequestSchema, req.body);
     const state = await catalogState();
     if (!findExercise(state, input.exerciseId)) throw new HttpError(404, 'Exercise not found.');
-    const submitted = submittedImages(store, state, input.exerciseId, input.pageIds, input.image);
-    const result = await store.update(draft => {
+    const id = input.id ?? randomUUID();
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      exerciseId: input.exerciseId, confidence: input.confidence, notes: input.notes, pageIds: input.pageIds ?? [], image: input.image ?? null,
+    })).digest('hex');
+    const { created, progress, reflection } = await store.update(draft => {
       const previous = draft.progress[input.exerciseId];
+      const existing = draft.reflections.find(item => item.id === id);
+      if (existing) {
+        if (existing.requestHash !== requestHash) throw new HttpError(409, 'This ID already belongs to a different reflection.');
+        return { created: false, progress: previous, reflection: existing };
+      }
+      const submitted = submittedImages(store, draft, input.exerciseId, input.pageIds, input.image);
       const progress: Progress = { ...defaultProgress(input.exerciseId), ...previous, status: 'completed', confidence: input.confidence,
         notes: input.notes, updatedAt: new Date().toISOString() };
       draft.progress[input.exerciseId] = progress;
       const snapshotIds = [...submitted.snapshotIds, ...(input.image !== undefined ? [store.saveSnapshot(input.image)] : [])];
-      const reflection = { id: randomUUID(), exerciseId: input.exerciseId, createdAt: progress.updatedAt, confidence: input.confidence,
+      const reflection = { id, requestHash, exerciseId: input.exerciseId, createdAt: progress.updatedAt, confidence: input.confidence,
         notes: input.notes, ...(snapshotIds.length ? { snapshotId: snapshotIds.at(-1), snapshotIds } : {}) };
       draft.reflections.push(reflection);
-      return { progress, reflection };
+      return { created: true, progress, reflection };
     });
     // Durable analysis is queued after saving; provider latency cannot delay the reflection.
-    void learning.reviewReflection(result.reflection.id).catch(() => undefined);
-    res.status(201).json(result);
+    void learning.reviewReflection(reflection.id).catch(() => undefined);
+    res.status(created ? 201 : 200).json({ progress, reflection });
   });
   app.post('/api/reviews/daily', async (req, res) => {
     const input = body(dailyReviewRequestSchema, req.body);
@@ -463,7 +472,13 @@ export function createApp(options: AppOptions = {}) {
         if (!evidence.sessions.length && !evidence.lessonSessions.length && !evidence.reflections.length && !evidence.progress.length)
           throw new HttpError(400, 'No study activity was saved for this date.');
         const prior = state.dailyReviews.find(review => review.date === input.date && review.timeZone === input.timeZone);
-        if (prior?.evidenceFingerprint === evidence.evidenceFingerprint) return prior;
+        if (prior) {
+          await workspace.ensureDailyReviewMemory(prior);
+          if (prior.evidenceFingerprint === evidence.evidenceFingerprint) {
+            if (reviewEvidence(await store.read(), input.date, input.timeZone).evidenceFingerprint === evidence.evidenceFingerprint) return prior;
+            continue;
+          }
+        }
         if (!ai) throw new HttpError(503, 'AI daily review is unavailable. The reflection remains saved.');
         const reviewModules = (await store.readLearning()).lessons.filter(l => l.status === 'ready');
         const payload = { date: input.date, timeZone: input.timeZone,
@@ -480,20 +495,22 @@ export function createApp(options: AppOptions = {}) {
           createdAt: new Date().toISOString(), evidenceFingerprint: evidence.evidenceFingerprint,
           evidenceSessionIds: evidence.sessions.map(item => item.id), evidenceReflectionIds: evidence.reflections.map(item => item.id),
           evidenceLessonSessionIds: evidence.lessonSessions.map(item => item.id) };
-        await store.update(draft => {
+        const saved = await store.update(draft => {
           const fresh = reviewEvidence(draft, input.date, input.timeZone);
           if (fresh.evidenceFingerprint !== evidence.evidenceFingerprint) return;
+          const existing = draft.dailyReviews.find(item => item.date === input.date && item.timeZone === input.timeZone && item.evidenceFingerprint === evidence.evidenceFingerprint);
+          if (existing) return existing;
           draft.dailyReviews = draft.dailyReviews.filter(item => item.date !== input.date || item.timeZone !== input.timeZone);
           draft.dailyReviews.push(review);
+          return review;
         });
+        if (!saved) continue;
+        await workspace.ensureDailyReviewMemory(saved);
         // A reflection may arrive during generation; review the newer evidence before replying.
         const latest = await store.read();
         if (reviewEvidence(latest, input.date, input.timeZone).evidenceFingerprint !== evidence.evidenceFingerprint)
           continue;
-        await workspace.write(`memories/reviews/${review.date}-${review.id}.md`,
-          `# Daily learning review\n\nDate: ${review.date}\nCreated: ${review.createdAt}\nTime zone: ${review.timeZone}\nEvidence sessions: ${review.evidenceSessionIds.join(', ') || 'none'}\nEvidence reflections: ${review.evidenceReflectionIds.join(', ') || 'none'}\nEvidence lessons: ${(review.evidenceLessonSessionIds ?? []).join(', ') || 'none'}\n\n${review.summary}\n\n## Observations\n${review.memories.map(memory => `- ${memory}`).join('\n')}\n\n## Next steps\n${review.nextSteps.map(step => `- ${step}`).join('\n')}\n`,
-          { expectedHash: null, actor: 'ari', reason: 'Dated review of saved study evidence' });
-        return review;
+        return saved;
       }
       throw new HttpError(409, 'New work arrived during review. Request the daily review again.');
     })();

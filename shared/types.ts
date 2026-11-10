@@ -45,7 +45,7 @@ export interface LessonSession {
 }
 export interface Reflection {
   id: string; exerciseId: string; createdAt: string; confidence: number; notes: string;
-  snapshotId?: string; snapshotIds?: string[];
+  requestHash?: string; snapshotId?: string; snapshotIds?: string[];
 }
 export interface ExercisePage {
   id: string; exerciseId: string; createdAt: string; snapshotId: string;
@@ -58,7 +58,7 @@ export interface DailyReview {
   evidenceSessionIds: string[]; evidenceReflectionIds: string[]; evidenceLessonSessionIds?: string[];
 }
 export interface ReflectionRequest {
-  exerciseId: string; confidence: number; notes: string; image?: string; pageIds?: string[];
+  id?: string; exerciseId: string; confidence: number; notes: string; image?: string; pageIds?: string[];
 }
 export interface ReflectionResponse { progress: Progress; reflection: Reflection; }
 export interface ArchivedStudyPlan {

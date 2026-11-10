@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -433,6 +433,73 @@ test('reflection completes progress and keeps its photo with the journal record'
     const state = await (await fx.request('/api/state')).json();
     assert.equal(state.reflections[0].snapshotId, result.reflection.snapshotId);
     assert.equal(state.progress[exerciseId].notes, result.reflection.notes);
+  } finally { await fx.close(); }
+});
+
+test('reflection retries preserve one record and its photos without rolling back newer progress', async () => {
+  const fx = await fixture();
+  try {
+    const exerciseId = exercises[0].id;
+    const page = await (await fx.request(`/api/exercises/${exerciseId}/pages`, 'POST', { image: png })).json();
+    const request = { id: randomUUID(), exerciseId, confidence: 3, notes: 'First attempt', pageIds: [page.id], image: photo(2) };
+    const send = (body = request) => fx.request('/api/reflections', 'POST', body);
+    const responses = await Promise.all([send(), send()]);
+    assert.deepEqual(responses.map(r => r.status).sort(), [200, 201]);
+    const [first, replay] = await Promise.all(responses.map(r => r.json()));
+    assert.deepEqual(first, replay);
+    assert.equal(first.reflection.id, request.id);
+    assert.deepEqual(first.reflection.snapshotIds, [page.snapshotId, first.reflection.snapshotId]);
+
+    await fx.request(`/api/exercises/${exerciseId}/pages/${page.id}`, 'DELETE');
+    await fx.restart();
+    assert.equal((await send({ ...request, image: photo(3) })).status, 409);
+    assert.equal((await send({ ...request, notes: 'Different' })).status, 409);
+    const second = await send({ ...request, id: randomUUID(), confidence: 5, pageIds: [], notes: 'Later attempt' });
+    assert.equal(second.status, 201);
+    const retried = await (await send()).json();
+    assert.deepEqual(retried.reflection, first.reflection);
+    assert.deepEqual(retried.progress, (await second.json()).progress);
+    const state = await (await fx.request('/api/state')).json();
+    assert.equal(state.reflections.length, 2);
+    assert.equal(state.progress[exerciseId].notes, 'Later attempt');
+    const learning = await (await fx.request('/api/learning')).json();
+    assert.equal(learning.runs.filter((r: { requestId: string }) => r.requestId === request.id).length, 1);
+  } finally { await fx.close(); }
+});
+
+test('daily review repairs a failed memory write and preserves subsequent edits and deletions', async () => {
+  let generations = 0;
+  const fx = await fixture(async () => {
+    generations++;
+    return { summary: 'Practice recorded.', strengths: [], gaps: [], nextSteps: [], memories: ['Remember units.'], recommendedModuleIds: [], pace: 'continue' };
+  });
+  try {
+    await fx.request('/api/learning/personalization');
+    const root = fx.path + '.workspace';
+    const directory = join(root, 'memories', 'reviews');
+    await mkdir(join(root, 'memories'), { recursive: true });
+    await writeFile(directory, 'temporarily unavailable');
+    await fx.request('/api/reflections', 'POST', { exerciseId: exercises[0].id, confidence: 4, notes: '' });
+    const day = { date: new Date().toISOString().slice(0, 10), timeZone: 'UTC' };
+    const run = () => fx.request('/api/reviews/daily', 'POST', day);
+    assert.ok((await run()).status >= 400);
+    const state = await (await fx.request('/api/state')).json();
+    assert.equal(state.dailyReviews.length, 1);
+    assert.ok((await run()).status >= 400);
+    const review = state.dailyReviews[0];
+    const file = join(directory, `${day.date}-${review.id}.md`);
+    await rm(directory);
+    const repaired = await run();
+    assert.equal(repaired.status, 200);
+    assert.equal((await repaired.json()).id, review.id);
+    assert.match(await readFile(file, 'utf8'), /Remember units/);
+    await writeFile(file, 'My edited note.');
+    assert.equal((await run()).status, 200);
+    assert.equal(await readFile(file, 'utf8'), 'My edited note.');
+    await rm(file);
+    assert.equal((await run()).status, 200);
+    await assert.rejects(readFile(file), { code: 'ENOENT' });
+    assert.equal(generations, 1);
   } finally { await fx.close(); }
 });
 

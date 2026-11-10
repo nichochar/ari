@@ -44,27 +44,45 @@ function saveDraft(key: string, value: unknown) {
   try { appStorage.setItem(key, JSON.stringify(value)); } catch { /* The server still saves submitted work. */ }
 }
 
-export function Assessments({ curricula, lessons, initialCurriculumId }: {
-  curricula: Curriculum[]; lessons: LearningLesson[]; initialCurriculumId?: string;
-}) {
+export function useAssessmentList() {
   const [list, setList] = useState<AssessmentListView | null>(null);
   const [error, setError] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(() => readDraft<string | null>('ari:assessment:selected', null));
-  const [newOpen, setNewOpen] = useState(false);
-  const [curriculumId, setCurriculumId] = useState(initialCurriculumId || curricula[0]?.id || '');
-  const [creating, setCreating] = useState(false);
-  const [createRequest, setCreateRequest] = useState<{ id: string; curriculumId: string } | null>(null);
+  const version = useRef(0);
   const refresh = useCallback(async () => {
-    try { setList(await assessmentApi<AssessmentListView>()); setError(''); }
-    catch (failure) { setError(errorText(failure)); }
+    const request = ++version.current;
+    try {
+      const next = await assessmentApi<AssessmentListView>();
+      if (request === version.current) { setList(next); setError(''); }
+    } catch (failure) { if (request === version.current) setError(errorText(failure)); }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { saveDraft('ari:assessment:selected', selectedId); }, [selectedId]);
+  useEffect(() => {
+    void refresh();
+    window.addEventListener('focus', refresh);
+    return () => { version.current++; window.removeEventListener('focus', refresh); };
+  }, [refresh]);
   useEffect(() => {
     if (!list?.assessments.some(item => ['planning', 'preparing', 'grading'].includes(item.status))) return;
     const timer = window.setInterval(() => void refresh(), 4000);
     return () => window.clearInterval(timer);
   }, [list, refresh]);
+  const completedCount = list?.assessments.filter(hasCompletedReview).length;
+  return { list, error, setError, refresh, completedCount };
+}
+
+function hasCompletedReview(item: AssessmentSummary) {
+  return item.latestMaxScore !== null;
+}
+
+export function Assessments({ history, curricula, lessons, initialCurriculumId }: {
+  history: ReturnType<typeof useAssessmentList>; curricula: Curriculum[]; lessons: LearningLesson[]; initialCurriculumId?: string;
+}) {
+  const { list, error, setError, refresh } = history;
+  const [selectedId, setSelectedId] = useState<string | null>(() => readDraft<string | null>('ari:assessment:selected', null));
+  const [newOpen, setNewOpen] = useState(false);
+  const [curriculumId, setCurriculumId] = useState(initialCurriculumId || curricula[0]?.id || '');
+  const [creating, setCreating] = useState(false);
+  const [createRequest, setCreateRequest] = useState<{ id: string; curriculumId: string } | null>(null);
+  useEffect(() => { saveDraft('ari:assessment:selected', selectedId); }, [selectedId]);
   useEffect(() => { if (!curriculumId && curricula.length) setCurriculumId(initialCurriculumId || curricula[0].id); }, [curricula, curriculumId, initialCurriculumId]);
   const eligible = lessons.filter(lesson => lesson.curriculumId === curriculumId && lesson.status === 'ready');
   async function create() {
@@ -105,7 +123,7 @@ export function Assessments({ curricula, lessons, initialCurriculumId }: {
 function AssessmentHistoryItem({ item, curriculum, onOpen }: { item: AssessmentSummary; curriculum?: Curriculum; onOpen: () => void }) {
   return <Card className="assessment-history-item"><div><div className="assessment-history-meta">{curriculum?.title || 'Curriculum'} · {dateText(item.createdAt)}</div>
     <h2>{item.title}</h2><p>{statusText[item.status]} · {item.minutes} min suggested{item.problemCount ? ` · ${item.problemCount} problems` : ''}
-      {item.latestMaxScore !== null && ` · ${item.latestScore === null ? 'Not scored' : item.latestScore} / ${item.latestMaxScore}`}</p>
+      {hasCompletedReview(item) && ` · ${item.latestScore === null ? 'Not scored' : item.latestScore} / ${item.latestMaxScore}`}</p>
     {item.error && <p className="inline-error">{item.error}</p>}</div>
     <Button variant="outline" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></Card>;
 }

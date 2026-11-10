@@ -74,9 +74,11 @@ p { line-height: 1.55; }
 .nav-item svg { flex: none; }
 .sidebar-foot { margin-top: auto; padding: 15px 11px 2px; color: var(--ari-sidebar-muted); font-size: .78rem; overflow: hidden; }
 .learner-name { display: block; margin-bottom: 7px; color: var(--ari-sidebar-text); }
-.completion-count { display: flex; align-items: center; gap: 6px; color: var(--ari-sidebar-muted); font-size: .7rem; white-space: nowrap; }
-.completion-count svg { flex: none; color: var(--ari-sidebar-muted); }
-.completion-count strong { color: var(--ari-sidebar-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.completion-heading { display: flex; align-items: center; gap: 5px; font-size: .7rem; }
+.completion-counts { display: flex; justify-content: space-between; gap: 6px; margin: 6px 0 0; }
+.completion-counts > div { display: flex; flex-direction: column-reverse; }
+.completion-counts dt { font-size: .68rem; }
+.completion-counts dd { margin: 0; color: var(--ari-sidebar-text); font-size: .9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sidebar-collapsed .sidebar { width: 66px; }
 .sidebar-collapsed .brand { padding: 0; justify-content: center; }
 .sidebar-collapsed .brand-wordmark { display: none; }

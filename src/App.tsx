@@ -19,7 +19,7 @@ import { Button } from './components/ui/button';
 import { AriMark, AriSun } from './components/ui/ari-mark';
 import { useLearning } from './useLearning';
 import { MainConversation } from './Learning';
-import { Assessments } from './Assessments';
+import { Assessments, useAssessmentList } from './Assessments';
 
 export default function App() {
   const navigation = useNavigation();
@@ -28,6 +28,7 @@ export default function App() {
   const [jumpTarget, setJumpTarget] = useState('');
   const learning = useLearning(view === 'chat', view !== 'desk' && view !== 'assessments');
   const study = useStudy(learning.data);
+  const assessmentList = useAssessmentList();
   const { state, selectedId, exercise, currentModule, nextExercise, nextLesson } = study;
   const desk = useDesk({ active: view === 'desk', state, setState: study.setState, exercise, selectedId,
     selectedIdRef: study.selectedIdRef, nativeAvailable: study.nativeAvailable, onIdle: learning.idle, setActionError });
@@ -106,7 +107,11 @@ export default function App() {
   if (!state) return <div className="loading-screen" role="status"><AriSun size={80} /><h1>Preparing your desk…</h1></div>;
 
   return <AppShell navigation={navigation} learnerName={state.profile.name}
-    completedCount={Object.values(state.progress).filter(item => item.status === 'completed').length}
+    completed={{
+      exercises: Object.values(state.progress).filter(item => item.status === 'completed').length,
+      lessons: learning.data ? path.completedLessonIds.size : undefined,
+      assessments: assessmentList.completedCount,
+    }}
     unreadCount={learning.data?.unreadCount || 0} onNavigate={navigate}
     overlays={<><DeskCameraDialog desk={desk} nativeAvailable={study.nativeAvailable} /><PhotoViewer viewer={photos} /></>}>
     {view === 'desk' && exercise && <StudyDesk desk={desk} exercise={exercise} currentModule={currentModule}
@@ -125,7 +130,7 @@ export default function App() {
       {learning.data && learning.error && <p className="inline-error" role="alert">{learning.error}<Button variant="ghost" onClick={() => void learning.refresh()}>Reconnect</Button></p>}
     </section>}
     {view === 'assessments' && <section className="page">
-      {learning.data ? <Assessments curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={path.activeCurriculum?.id} />
+      {learning.data ? <Assessments history={assessmentList} curricula={learning.data.curricula} lessons={learning.data.lessons} initialCurriculumId={path.activeCurriculum?.id} />
         : <><PageHeader title="Assessments" /><div className="loading-screen page-loading" role={learning.error ? 'alert' : 'status'}>
           {learning.error ? <><p>{learning.error}</p><Button variant="outline" onClick={() => void learning.refresh()}>Try again</Button></> : <AriSun size={72} />}
         </div></>}

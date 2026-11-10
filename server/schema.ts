@@ -50,7 +50,7 @@ export const lessonSessionSchema = z.object({
 }).strict();
 export const reflectionSchema = z.object({
   id: bounded(120), exerciseId: bounded(120), createdAt: z.iso.datetime(),
-  confidence: z.number().int().min(1).max(5), notes: bounded(4000), snapshotId: bounded(120).optional(),
+  confidence: z.number().int().min(1).max(5), notes: bounded(4000), requestHash: z.string().length(64).optional(), snapshotId: bounded(120).optional(),
   snapshotIds: z.array(bounded(120).min(1)).max(21).optional(),
 }).strict();
 export const exercisePageSchema = z.object({
@@ -96,7 +96,7 @@ export const lessonChatRequestSchema = z.object({
   language: z.enum(['en', 'fr']).optional(), images: chatPhotosSchema.optional(),
 }).strict().refine(input => input.message || input.images?.length, 'Write a question or attach a photo.');
 export const reflectionRequestSchema = z.object({
-  exerciseId: bounded(120).min(1), confidence: z.number().int().min(1).max(5), notes: bounded(4000),
+  id: z.uuid().optional(), exerciseId: bounded(120).min(1), confidence: z.number().int().min(1).max(5), notes: bounded(4000),
   image: z.string().max(7_000_000).optional(), pageIds: z.array(bounded(120).min(1)).max(20).optional(),
 }).strict();
 export const pageRequestSchema = z.object({ image: z.string().max(7_000_000) }).strict();

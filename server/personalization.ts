@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, closeSync, constants, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
+import type { DailyReview } from '../shared/types.js';
 import type { OnboardingAnswers, OnboardingState, PersonalizationActor, PersonalizationDocument, PersonalizationEntry, PersonalizationMetadata, PersonalizationMutation, PersonalizationRead, PersonalizationRevision, PersonalizationView } from '../shared/personalization.js';
 import { defaultLearning, defaultState, type StateStore } from './state.js';
 
@@ -20,6 +21,7 @@ export class PersonalizationError extends Error {
 }
 
 const hash = (content: string) => createHash('sha256').update(content).digest('hex');
+const importedReviewPath = (id: string) => `memories/reviews/${hash(id).slice(0, 32)}.md`;
 const failure = (code: PersonalizationError['code'], message: string): never => { throw new PersonalizationError(code, message); };
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 const boundedInteger = (value: number, min: number, max: number) => {
@@ -214,7 +216,7 @@ export class PersonalizationWorkspace {
     const filename = (id: string) => hash(id).slice(0, 32);
     for (const review of state.dailyReviews) {
       const content = `# Daily review: ${review.date}\n\nReview ID: ${review.id}\nCreated: ${review.createdAt}\nTime zone: ${review.timeZone}\nEvidence session IDs: ${review.evidenceSessionIds.join(', ')}\nEvidence reflection IDs: ${review.evidenceReflectionIds.join(', ')}\nEvidence lesson session IDs: ${(review.evidenceLessonSessionIds ?? []).join(', ')}\n\n${review.summary}\n\n## Strengths\n${review.strengths.map(item => `- ${item}`).join('\n')}\n\n## Gaps\n${review.gaps.map(item => `- ${item}`).join('\n')}\n\n## Next steps\n${review.nextSteps.map(item => `- ${item}`).join('\n')}\n\n## Observations\n${review.memories.map(item => `- ${item}`).join('\n')}\n`;
-      seedLongMemory(`memories/reviews/${filename(review.id)}.md`, content);
+      seedLongMemory(importedReviewPath(review.id), content);
     }
     for (const reflection of state.reflections) seed(`memories/reflections/${filename(reflection.id)}.md`, `# Learner reflection\n\nReflection ID: ${reflection.id}\nExercise ID: ${reflection.exerciseId}\nCreated: ${reflection.createdAt}\nConfidence: ${reflection.confidence}/5\n\n${reflection.notes}\n`);
     const now = new Date().toISOString();
@@ -297,6 +299,20 @@ export class PersonalizationWorkspace {
         }
       }
       return { matches, truncated: false };
+    });
+  }
+
+  async ensureDailyReviewMemory(review: DailyReview): Promise<void> {
+    await this.ready();
+    return this.exclusive(() => {
+      const path = `memories/reviews/${review.date}-${review.id}.md`;
+      // A revision is a delivery receipt even if the learner later moves or deletes the note.
+      if (this.store.readPersonalizationRevision(importedReviewPath(review.id), 1)) return;
+      this.validatePath(path);
+      if (this.store.readPersonalizationRevision(path, 1) || this.observe(path)) return;
+      this.mutate(path, `# Daily learning review\n\nDate: ${review.date}\nCreated: ${review.createdAt}\nTime zone: ${review.timeZone}\nEvidence sessions: ${review.evidenceSessionIds.join(', ') || 'none'}\nEvidence reflections: ${review.evidenceReflectionIds.join(', ') || 'none'}\nEvidence lessons: ${(review.evidenceLessonSessionIds ?? []).join(', ') || 'none'}\n\n${review.summary}\n\n## Observations\n${review.memories.map(memory => `- ${memory}`).join('\n')}\n\n## Next steps\n${review.nextSteps.map(step => `- ${step}`).join('\n')}\n`, {
+        expectedHash: null, actor: 'ari', reason: 'Dated review of saved study evidence',
+      });
     });
   }
 

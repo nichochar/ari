@@ -2,9 +2,10 @@ import { useChatPhotos } from '../../components/photos/useChatPhotos';
 import { photoLimitError } from '../../../shared/photos';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject, Dispatch, SetStateAction } from 'react';
-import type { AppState, Exercise, ExercisePage, ReflectionResponse, Session, TutorRequest } from '../../../shared/types';
+import type { AppState, Exercise, ExercisePage, ReflectionRequest, ReflectionResponse, Session, TutorRequest } from '../../../shared/types';
 import { MAX_EXERCISE_PAGES } from '../../../shared/types';
 import { api, post, errorText } from '../../lib/api';
+import { createScopedStorage } from '../../storage';
 import { mergeSessions } from '../../app/session-state';
 import { useCamera } from '../../useCamera';
 type TutorMode = 'chat' | 'check';
@@ -14,6 +15,13 @@ type OutgoingMessage = {
   status: 'sending' | 'failed'; error?: string;
 };
 type UnsavedPage = { id: string; image: string; error: string };
+
+function readPendingReflection(storage: ReturnType<typeof createScopedStorage>, exerciseId: string): ReflectionRequest | null {
+  try {
+    const request = JSON.parse(storage.getItem('ari:reflection:' + exerciseId) || 'null') as ReflectionRequest | null;
+    return request?.id && request.exerciseId === exerciseId ? request : null;
+  } catch { return null; }
+}
 
 type DeskOptions = {
   active: boolean; state: AppState | null; setState: Dispatch<SetStateAction<AppState | null>>;
@@ -40,6 +48,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   const [reflectionNotes, setReflectionNotes] = useState('');
   const [reflectionBusy, setReflectionBusy] = useState(false);
   const reflectionBusyRef = useRef(false);
+  const [pendingReflections] = useState(() => createScopedStorage(() => window.sessionStorage, window.location.search));
   const [reflectionError, setReflectionError] = useState('');
   const [cameraExpanded, setCameraExpanded] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -87,9 +96,17 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   }, [conversation, selectedId, active]);
   useEffect(() => {
     if (!reflectionReady) return;
-    setConfidence(progress?.confidence || null);
-    setReflectionNotes(latestReflection?.notes || '');
-    setReflectionError('');
+    const pending = readPendingReflection(pendingReflections, selectedId);
+    if (pending && !state.reflections.some(item => item.id === pending.id)) {
+      setConfidence(pending.confidence);
+      setReflectionNotes(pending.notes);
+      setReflectionError('Reflection save was interrupted. Save again to retry.');
+    } else {
+      if (pending) pendingReflections.removeItem('ari:reflection:' + selectedId);
+      setConfidence(progress?.confidence || null);
+      setReflectionNotes(latestReflection?.notes || '');
+      setReflectionError('');
+    }
   }, [selectedId, reflectionReady]); // Deliberately do not reset notes when state refreshes.
 
   function cancelCapture() { gradeCaptureRef.current?.abort(); }
@@ -279,20 +296,27 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     setReflectionError('');
     const exerciseId = exercise.id;
     try {
-      const image = uploadedImage || (camera.active ? camera.capture() : null);
-      if (camera.active && !uploadedImage && !image) {
-        setReflectionError('The live frame is not ready yet. Wait until the paper appears, then save again.');
-        return;
+      const key = 'ari:reflection:' + exerciseId;
+      const notes = reflectionNotes.trim();
+      const pageIds = pages.map(page => page.id);
+      let request = readPendingReflection(pendingReflections, exerciseId);
+      if (!request || request.confidence !== confidence || request.notes !== notes ||
+          JSON.stringify(request.pageIds ?? []) !== JSON.stringify(pageIds) || (uploadedImage && uploadedImage !== request.image)) {
+        const image = uploadedImage || (camera.active ? camera.capture() : null);
+        if (camera.active && !image) {
+          setReflectionError('The live frame is not ready yet. Wait until the paper appears, then save again.');
+          return;
+        }
+        request = { id: crypto.randomUUID(), exerciseId, confidence, notes, pageIds, ...(image ? { image } : {}) };
+        pendingReflections.setItem(key, JSON.stringify(request));
       }
-      const result = await post<ReflectionResponse>('/api/reflections', {
-        exerciseId, confidence, notes: reflectionNotes.trim(),
-        ...(pages.length ? { pageIds: pages.map(page => page.id) } : {}),
-        ...(image ? { image } : {}),
-      });
+      const result = await post<ReflectionResponse>('/api/reflections', request);
+      pendingReflections.removeItem(key);
       setState(current => current ? {
         ...current,
-        progress: { ...current.progress, [exerciseId]: result.progress },
-        reflections: [...current.reflections, result.reflection],
+        progress: current.progress[exerciseId]?.updatedAt > result.progress.updatedAt
+          ? current.progress : { ...current.progress, [exerciseId]: result.progress },
+        reflections: mergeSessions(current.reflections, [result.reflection]),
       } : current);
       onIdle();
     } catch (error) {

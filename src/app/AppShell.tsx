@@ -13,10 +13,10 @@ function navIcon(view: View) {
 }
 
 type AppShellProps = {
-  navigation: Navigation; learnerName: string; completedCount: number; unreadCount: number;
+  navigation: Navigation; learnerName: string; completed: { exercises: number; lessons?: number; assessments?: number }; unreadCount: number;
   onNavigate: (view: View) => void; children: ReactNode; overlays: ReactNode;
 };
-export function AppShell({ navigation, learnerName, completedCount, unreadCount, onNavigate, children, overlays }: AppShellProps) {
+export function AppShell({ navigation, learnerName, completed, unreadCount, onNavigate, children, overlays }: AppShellProps) {
   const { view, sidebarCollapsed, setSidebarCollapsed, mobileMenu, setMobileMenu } = navigation;
   return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenu ? 'sidebar-open' : '')}>
@@ -35,9 +35,12 @@ export function AppShell({ navigation, learnerName, completedCount, unreadCount,
       </nav>
       <div className="sidebar-foot">
         <span className="learner-name">{learnerName && learnerName !== 'Learner' ? learnerName : 'Your learning'}</span>
-        <span className="completion-count"><CheckCircle2 size={13} aria-hidden="true" />
-          <span><strong>{completedCount}</strong> {completedCount === 1 ? 'exercise' : 'exercises'} completed</span>
-        </span>
+        <span className="completion-heading" id="sidebar-completed"><CheckCircle2 size={13} aria-hidden="true" />Completed</span>
+        <dl className="completion-counts" aria-labelledby="sidebar-completed">
+          {([['Exercise', completed.exercises], ['Lesson', completed.lessons], ['Assessment', completed.assessments]] as const).map(([label, count]) =>
+            <div key={label}><dt>{label}{count === 1 ? '' : 's'}</dt><dd>{count ?? '—'}</dd></div>
+          )}
+        </dl>
       </div>
     </aside>
     {mobileMenu && <Button variant="plain" className="mobile-scrim" aria-label="Close menu" onClick={() => setMobileMenu(false)} />}

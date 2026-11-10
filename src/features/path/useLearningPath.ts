@@ -12,7 +12,7 @@ export type OutgoingLessonMessage = {
 
 const moduleKey = 'ari:selectedModuleId';
 export function useLearningPath(study: Study, learning: ReturnType<typeof useLearning>, onSelectExercise: (id: string) => void, setActionError: (message: string) => void) {
-  const { state, setState, allModules } = study;
+  const { state, setState, allModules, catalog } = study;
   const [selectedModuleId, setSelectedModuleId] = useState(() => {
     const saved = appStorage.getItem(moduleKey);
     return saved || courseModules[0]?.id || '';
@@ -36,6 +36,16 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     }
     setOutgoingLessonMessages(current => current.filter(item => !acknowledged.has(item.id)));
   }, [state?.lessonSessions, outgoingLessonMessages]);
+  const completedLessonIds = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const exercise of catalog) {
+      if (state?.progress[exercise.id]?.status === 'completed') {
+        counts.set(exercise.moduleId, (counts.get(exercise.moduleId) ?? 0) + 1);
+      }
+    }
+    return new Set(allModules.filter(module => (!('status' in module) || module.status === 'ready')
+      && (counts.get(module.id) ?? 0) >= 2).map(module => module.id));
+  }, [allModules, catalog, state?.progress]);
   const activeCurriculum = learning.data?.curricula.find(item => item.id === curriculumId) || learning.data?.curricula.find(item => item.source === 'original');
   const pathModules = activeCurriculum ? allModules.filter(item => activeCurriculum.lessonIds.includes(item.id)) : courseModules;
   const selectedModule = pathModules.find(item => item.id === selectedModuleId) || pathModules[0];
@@ -105,7 +115,7 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     finally { setGenerationBusy(false); }
   }
 
-  return { activeCurriculum, pathModules, selectedModule, selectedLesson, selectedModuleId, setSelectedModuleId,
+  return { activeCurriculum, completedLessonIds, pathModules, selectedModule, selectedLesson, selectedModuleId, setSelectedModuleId,
     prepareBusy, prepareLesson, lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts,
     sendLessonMessage, deliverLessonMessage, generationBusy, generationDifficulty, setGenerationDifficulty,
     generateExercise, showLesson, openCurriculum };

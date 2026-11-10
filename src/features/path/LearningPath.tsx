@@ -16,7 +16,7 @@ type LearningPathProps = {
   openCurriculum: (id: string) => void; openChat: (focusId: string, starter?: string) => void; actionError: string;
 };
 export function LearningPath({ path, state, catalog, learning, selectExercise, openCurriculum, openChat, actionError }: LearningPathProps) {
-  const { activeCurriculum, pathModules, selectedModule, selectedLesson, setSelectedModuleId,
+  const { activeCurriculum, completedLessonIds, pathModules, selectedModule, selectedLesson, setSelectedModuleId,
     prepareBusy, prepareLesson, lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts,
     sendLessonMessage, deliverLessonMessage, generationBusy, generationDifficulty, setGenerationDifficulty, generateExercise } = path;
   const lessonListRef = useRef<HTMLDivElement>(null);
@@ -43,17 +43,14 @@ export function LearningPath({ path, state, catalog, learning, selectExercise, o
     {learning.data && <div className="curriculum-selector"><label htmlFor="curriculum-select">Your curricula</label><Select id="curriculum-select" value={activeCurriculum?.id || ''} onValueChange={openCurriculum} options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} /><Button variant="ghost" onClick={() => { openChat('', 'I’d like to learn a new subject. '); }}><Plus size={14} />Explore a new subject</Button></div>}
     <div className="path-layout">
       <Card className="module-list" ref={lessonListRef}>{pathModules.map((module, index) => {
-        const lessonExercises = catalog.filter(item => item.moduleId === module.id);
         const lesson = learning.data?.lessons.find(item => item.id === module.id);
-        const complete = (!lesson || lesson.status === 'ready')
-          && lessonExercises.filter(item => state.progress[item.id]?.status === 'completed').length >= 2;
         return <Button variant="plain" key={module.id}
         aria-pressed={selectedModule?.id === module.id} className={'module-row ' + (selectedModule?.id === module.id ? 'selected' : '')}
         onClick={() => setSelectedModuleId(module.id)}>
         <span className={'subject-mark ' + module.subject}>{module.subject === 'math' ? 'M' : module.subject === 'physics' ? 'P' : <BookOpen size={14} />}</span>
         <span className="module-row-copy"><strong>{module.title}</strong><span className="module-row-meta">
           <small>{activeCurriculum?.source === 'generated' ? `Lesson ${index + 1} · ${lesson?.status || 'planned'}` : `Phase ${module.phase} · ${module.subject}`}</small>
-          {complete && <span className="module-complete"><Check size={11} aria-hidden="true" />Complete</span>}
+          {completedLessonIds.has(module.id) && <span className="module-complete"><Check size={11} aria-hidden="true" />Complete</span>}
         </span></span>
       </Button>; })}</Card>
       {selectedModule && <Card as="article" className="module-detail"><span className="eyebrow">{activeCurriculum?.source === 'generated' ? `${activeCurriculum.topic} · ${selectedLesson?.status || 'planned'}` : `SHORT LESSON · PHASE ${selectedModule.phase}`}</span>

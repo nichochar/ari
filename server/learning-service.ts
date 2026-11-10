@@ -118,6 +118,7 @@ export class LearningService {
     for (const reflection of state.reflections) if (!reviewed.has(reflection.id)) await this.reviewReflection(reflection.id);
     for (const assessment of (await this.store.readAssessments()).assessments) for (const submission of assessment.submissions)
       if (submission.status === 'complete' && !reviewed.has(submissionHistoryId(assessment.id, submission.id))) await this.reviewAssessment(assessment.id, submission.id);
+    for (const review of state.dailyReviews) await this.workspace.ensureDailyReviewMemory(review).catch(() => undefined);
   }
   stop() { this.stopped = true; }
   async settle() { await this.tail; }

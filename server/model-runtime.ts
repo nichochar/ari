@@ -7,6 +7,7 @@ import { createLearningProvider, LearningProviderError, type LearningAgentProvid
 import { learningTools } from './learning-service.js';
 import { workspaceTools } from './personalization-tools.js';
 import { aiSchemas, type AIAsk } from './ai.js';
+import { lessonFicheTool } from './lesson-fiche.js';
 
 export function switchingProvider(selection: () => ModelSelection,
   factory: (selection: ModelSelection) => LearningAgentProvider): LearningAgentProvider {
@@ -80,7 +81,7 @@ export function createModelRuntime(store: StateStore, dbPath: string, env: NodeJ
     return createCodexLearningProvider({ ...selected, cwd: join(runtime, 'workspace'), stateDir: join(runtime, 'state'), tools });
   });
   const learningProvider = make(mainConnection, learningTools);
-  const personalizationProvider = make(tutorConnection, workspaceTools);
+  const personalizationProvider = make(tutorConnection, [...workspaceTools, lessonFicheTool]);
   const settings = new ModelSettingsService(store, defaults, async () => {
     if (!learningProvider || !personalizationProvider) throw new LearningProviderError('MODEL_CONNECTION', 'Connect the configured tutors before choosing a model.');
     const main = await learningProvider.listModels!();

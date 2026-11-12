@@ -67,6 +67,7 @@ export function learningRoutes(service: LearningService) {
   router.post('/chat', async (req, res) => res.status(202).json(await service.chat(mainChatRequestSchema.parse(req.body))));
   router.post('/proposals/:id/accept', async (req, res) => res.status(202).json(await service.accept(String(req.params.id), revisionSchema.parse(req.body).revision)));
   router.post('/proposals/:id/dismiss', async (req, res) => res.json(await service.dismiss(String(req.params.id), revisionSchema.parse(req.body).revision)));
+  router.post('/lessons/:id/fiche', async (req, res) => { emptySchema.parse(req.body); res.json(await service.createFiche(String(req.params.id))); });
   router.post('/lessons/:id/prepare', async (req, res) => { emptySchema.parse(req.body); res.status(202).json(await service.prepare(String(req.params.id))); });
   router.patch('/memory', async (req, res) => { const input = memoryPatchSchema.parse(req.body); res.json(await service.memory(input.content, input.revision, 'user')); });
   router.get('/materials/:id/source', async (req, res) => {

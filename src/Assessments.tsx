@@ -37,6 +37,12 @@ type PageRequest = { id: string; image: string };
 type Pending<T> = { body: T; error?: string; createdAt: string };
 type LocalWork = { photo?: { image: string; name: string }; chat?: Pending<ChatRequest>; submit?: Pending<SubmitRequest>; page?: Pending<PageRequest> };
 const localWork = new Map<string, LocalWork>();
+function problemHeading(view: AssessmentView, problemId: string) {
+  const index = view.problems.findIndex(problem => problem.id === problemId);
+  const problem = view.problems[index];
+  if (!problem) return 'Problem';
+  return `${index + 1}. ${problem.title.replace(/^\d+[.)]\s+/, '')}`;
+}
 function readDraft<T>(key: string, fallback: T): T {
   try { return JSON.parse(appStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; }
 }
@@ -331,7 +337,7 @@ function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {
       {view.status === 'paused' && <Alert>Your paper and work are saved. Resume when you are ready.</Alert>}
       {hasPaper && <div className="assessment-grid"><div className="assessment-main">
         <PlotAskContext.Provider value={askPlot}><Card as="article" className="assessment-paper"><div className="assessment-paper-heading"><h2>Assessment paper</h2><span>{view.problems.reduce((sum, problem) => sum + problem.points, 0)} points</span></div>
-          {view.problems.map((problem, index) => <section className="assessment-problem" key={problem.id}><div className="assessment-problem-heading"><h3>{index + 1}. {problem.title}</h3><span>{problem.points} points</span></div><Markdown>{problem.prompt}</Markdown></section>)}
+          {view.problems.map(problem => <section className="assessment-problem" key={problem.id}><div className="assessment-problem-heading"><h3>{problemHeading(view, problem.id)}</h3><span>{problem.points} points</span></div><Markdown>{problem.prompt}</Markdown></section>)}
         </Card></PlotAskContext.Provider>
         {!!reviews.length && selectedReview?.review && <Card as="section" className="assessment-review">
           <div className="assessment-review-heading"><h2>Review</h2><Select compact aria-label="Review submission" value={selectedReview.id} onValueChange={setReviewId}
@@ -424,7 +430,7 @@ function ExpandedCamera({ camera }: { camera: ReturnType<typeof useCamera> }) {
 function Review({ review, view }: { review: AssessmentReview; view: AssessmentView }) {
   return <><div className="assessment-score">{review.score === null ? <strong>Not scored</strong> : <><strong>{review.score}</strong><span> / {review.maxScore}</span></>}</div>
     <Markdown>{review.summary}</Markdown>
-    <div className="assessment-problem-reviews">{review.problems.map((result, index) => <div key={result.problemId}><div className="assessment-problem-heading"><h3>{index + 1}. {view.problems.find(problem => problem.id === result.problemId)?.title || 'Problem'}</h3><span>{result.score === null ? 'Not scored' : `${result.score} / ${result.maxScore}`}</span></div><Markdown>{result.feedback}</Markdown>
+    <div className="assessment-problem-reviews">{review.problems.map(result => <div key={result.problemId}><div className="assessment-problem-heading"><h3>{problemHeading(view, result.problemId)}</h3><span>{result.score === null ? 'Not scored' : `${result.score} / ${result.maxScore}`}</span></div><Markdown>{result.feedback}</Markdown>
       {result.criteria.length > 0 && <details><summary>Marking details</summary>{result.criteria.map((criterion, criterionIndex) => <p key={criterionIndex}><strong>{criterion.criterion}: {criterion.awarded} / {criterion.max}</strong><br />{criterion.comment}</p>)}</details>}</div>)}</div>
     {[['Strengths', review.strengths], ['Gaps', review.gaps], ['Next steps', review.nextSteps]].map(([title, items]) => (items as string[]).length > 0 && <div className="assessment-review-notes" key={title as string}><h3>{title}</h3><ul>{(items as string[]).map((item, index) => <li key={index}><Markdown>{item}</Markdown></li>)}</ul></div>)}
     {review.helpSummary && <div className="assessment-help-summary"><h3>Help used</h3><Markdown>{review.helpSummary}</Markdown></div>}

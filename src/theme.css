@@ -39,4 +39,5 @@
   --radius: var(--ari-radius-control);
   --ari-control-height: 36px;
   --ari-control-compact: 30px;
+  --ari-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }

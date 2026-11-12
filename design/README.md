@@ -94,6 +94,16 @@ Use the shared `Button` variants in `src/components/ui/button.tsx`; visual state
 
 Keep teal for keyboard focus rather than button hover borders.
 
+## Lesson workspace
+
+Learning path uses the shared PageHeader in the same position as the other pages. Place Curriculum and Lesson Select controls together below it, stacking them on small screens. Use accessible names without visible captions above the controls; the selected titles provide context. Keep the workspace's bottom gutter at 8px to give reading and chat more room. The lesson title is a content heading, never a disguised picker. Keep phase/status and completion marks in the lesson menu. Lesson, Fiche and Exercises use the shared Base UI Tabs. Further reading is not a separate section; retain relevant source citations in the lesson.
+
+Chat toggles beside the content using the shared Resizable components, following [shadcn's resizable composition](https://ui.shadcn.com/docs/components/base/resizable). Dragging and keyboard resizing remember the user's split. On narrow workspaces, content and chat take turns using the available width. Keep the composer anchored and preserve drafts, pending replies and reading positions when hiding chat or navigating. Workspace state lives in the root-mounted path hook.
+
+The divider is a 1px line; hover and active dragging share the same slightly darker gray, without thickening it. Keep a clear keyboard-focus indicator when not dragging. The resize library provides a wider invisible pointer target. Its native collapse behavior updates the same state as the toolbar icon toggle, preserving the last expanded width. Chat has no repeated header or close control. Following [Emil Kowalski's animation guidance](https://github.com/emilkowalski/skills/blob/main/skills/animate/SKILL.md), keep toggles brief, reversible and reduced-motion aware. Both pane widths transition together over 200ms with `--ari-ease-in-out`; this is an intentional layout-animation exception so the lesson expands continuously as chat closes. Keep closing content mounted until the transition finishes. Never animate dragging, initial layout or responsive breakpoint changes. Internal seams remain square; only the outside of the workspace has rounded corners.
+
+Fiches can expand through the shared Dialog. Use a brief, subtle paper-like tilt on entry, with no animation for reduced motion. Keep the same Markdown content in the tab and expanded view, without artificial pagination.
+
 ## Confidence ratings
 
 Finish & continue uses five numbered choices through the shared Base UI `SegmentedControl`. The selected description is text only, with no repeated number or endpoint labels. New exercises start unselected; saved ratings are restored. A rating is required to save a reflection. Keep radio-group semantics, arrow-key navigation and visible keyboard focus.

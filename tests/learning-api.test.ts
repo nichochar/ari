@@ -28,6 +28,52 @@ async function fixture(provider?: LearningAgentProvider, ai?: AIAsk) {
 const chat = (fx: Awaited<ReturnType<typeof fixture>>, message: string, id = randomUUID()) => fx.request('/api/learning/chat', 'POST', { id, message });
 const proposeProvider = () => fixtureLearningProvider(request => toolReply(request, 'propose_learning', historyProposal));
 
+test('existing lesson fiches are verified, deduplicated, revisioned and conflict-safe', async () => {
+  let valid = false;
+  let beforeGenerate: () => Promise<void> = async () => {};
+  let generations = 0;
+  const content = Array.from({ length: 10 }, (_, index) => `**Idea ${index + 1}**\nA useful definition with its conditions.`).join('\n\n');
+  const provider = fixtureLearningProvider(undefined, async <T>(instructions: string) => {
+    if (instructions.startsWith('Independently')) return { valid, reason: 'Synthetic verification.' } as T;
+    generations++;
+    await beforeGenerate();
+    return { content } as T;
+  });
+  const fx = await fixture(provider);
+  const lesson = (await fx.store().readLearning()).lessons[0];
+  const route = `/api/learning/lessons/${lesson.id}/fiche`;
+  try {
+    const before = await fx.store().readLearning();
+    assert.equal((await fx.request(route, 'POST', {})).status, 422);
+    assert.deepEqual(await fx.store().readLearning(), before);
+    valid = true;
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    beforeGenerate = async () => { started(); await gate; };
+    const first = fx.service().createFiche(lesson.id);
+    await entered;
+    const duplicate = fx.service().createFiche(lesson.id);
+    release();
+    assert.deepEqual(await first, await duplicate);
+    assert.equal(generations, 2);
+    const saved = (await fx.store().readLearning()).lessons[0];
+    assert.deepEqual(saved, { ...lesson, fiche: content, revision: lesson.revision + 1 });
+    assert.deepEqual((await fx.store().readLearning()).exercises, before.exercises);
+    const history = await fx.store().readLessonRevisions(lesson.id);
+    assert.deepEqual(history[0].lesson, lesson);
+    await fx.restart();
+    assert.equal((await fx.request(route, 'POST', {})).status, 200);
+    assert.equal(generations, 2);
+    const other = (await fx.store().readLearning()).lessons[1];
+    beforeGenerate = async () => { await fx.store().updateLearning(data => { data.lessons[1].primer = 'Newer explanation.'; }); };
+    assert.equal((await fx.request(`/api/learning/lessons/${other.id}/fiche`, 'POST', {})).status, 409);
+    assert.equal((await fx.store().readLearning()).lessons[1].fiche, undefined);
+    assert.equal((await fx.store().readLearning()).lessons[1].primer, 'Newer explanation.');
+  } finally { await fx.close(); }
+});
+
 test('casual exploration creates nothing; duplicate sends and reload preserve one turn', async () => {
   let runs = 0; const base = fixtureLearningProvider();
   const fx = await fixture({ ...base, run: async r => { runs++; return base.run(r); } });
@@ -53,6 +99,7 @@ test('explicit acceptance creates exactly one generic curriculum and prepares on
     const d = await fx.store().readLearning(); assert.equal(d.curricula.length, 2);
     const c = d.curricula.find(c => c.id === accepted.curriculumId)!; const lessons = d.lessons.filter(l => l.curriculumId === c.id);
     assert.deepEqual(lessons.map(l => l.status), ['ready', 'planned']); assert.equal(lessons[0].subject, 'history'); assert.equal(lessons[0].exerciseIds.length, 2); assert.equal(lessons[1].exerciseIds.length, 0);
+    assert.equal(lessons[0].fiche, preparedLesson.fiche);
     const state = await (await fx.request('/api/state')).json(); const e = d.exercises.find(e => e.moduleId === lessons[0].id)!; assert.ok(state.generatedExercises.some((x: {id:string}) => x.id === e.id));
     assert.equal((await fx.request('/api/lesson-chat', 'POST', { id: randomUUID(), moduleId: lessons[0].id, message: 'What counts as evidence?' })).status, 200);
     assert.equal((await fx.request('/api/tutor', 'POST', { exerciseId: e.id, mode: 'chat', message: 'Can I compare two accounts?' })).status, 200);

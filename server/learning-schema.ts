@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { chatPhotosSchema, exerciseSchema } from './schema.js';
 import { MAX_CHAT_PHOTOS } from '../shared/photos.js';
+import { ficheContentSchema } from './lesson-fiche.js';
 
 const text = (max: number) => z.string().max(max);
 const id = text(120).min(1);
@@ -15,7 +16,7 @@ export const curriculumSchema = z.object({
 }).strict();
 export const learningLessonSchema = z.object({
   id, subject: text(300).min(1), title: text(200).min(1), frenchTitle: text(200), phase: z.number().int().min(1).max(10000),
-  summary: text(10000), primer: text(50000), objectives: z.array(text(1000)).max(30), prerequisites: ids,
+  summary: text(10000), primer: text(50000), fiche: ficheContentSchema.optional(), objectives: z.array(text(1000)).max(30), prerequisites: ids,
   exerciseIds: ids, resources: z.array(z.object({ title: text(300), url: text(4000).url() }).strict()).max(100),
   curriculumId: id, status: z.enum(['planned', 'preparing', 'ready', 'failed']), revision: z.number().int().min(1),
   error: text(4000).optional(),

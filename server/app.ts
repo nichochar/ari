@@ -199,7 +199,7 @@ export function createApp(options: AppOptions = {}) {
     return { ...state, generatedExercises: [...state.generatedExercises, ...data.exercises.filter(e => !existing.has(e.id) && data.lessons.some(l => l.id === e.moduleId && l.status === 'ready'))] };
   };
   const findModule = async (id: string) => (await store.readLearning()).lessons.find(l => l.id === id && l.status === 'ready') ?? moduleMap.get(id);
-  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(runtime?.ai ?? options.ai, runtime?.personalizationProvider ?? options.personalizationProvider, workspace, () => learning.personalizationChanged());
+  const ai = options.aiConfigured === false ? undefined : createPersonalizedAsk(runtime?.ai ?? options.ai, runtime?.personalizationProvider ?? options.personalizationProvider, workspace, () => learning.personalizationChanged(), store);
   const aiConfigured = options.aiConfigured ?? Boolean(ai);
   const model = options.model ?? process.env.OPENAI_MODEL ?? 'gpt-5.4';
   const dist = options.distPath ?? process.env.ARI_DIST_PATH ?? join(process.cwd(), 'dist');
@@ -343,10 +343,12 @@ export function createApp(options: AppOptions = {}) {
     const task = (async (): Promise<LessonSession> => {
       if (previous) await previous.catch(() => undefined);
       const current = await store.read();
-      const { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites } = module;
+      const currentLesson = (await store.readLearning()).lessons.find(lesson => lesson.id === module.id && lesson.status === 'ready');
+      if (!currentLesson) throw new HttpError(409, 'The lesson is being updated. Try again when it is ready.');
+      const { id, title, frenchTitle, subject, phase, summary, primer, fiche, revision, objectives, prerequisites } = currentLesson;
       const earlier = recentPhotos(store, current.lessonSessions.filter(session => session.moduleId === module.id).slice(-8).flatMap(session => session.snapshotIds ?? []), input.images ?? []);
       const images = [...earlier.map(photo => photo.image), ...(input.images ?? [])];
-      const payload = { imageOrder: [...earlier.map(({ snapshotId }) => ({ source: 'earlier message', snapshotId })), ...(input.images ?? []).map(() => ({ source: 'current message' }))], lesson: { id, title, frenchTitle, subject, phase, summary, primer, objectives, prerequisites },
+      const payload = { imageOrder: [...earlier.map(({ snapshotId }) => ({ source: 'earlier message', snapshotId })), ...(input.images ?? []).map(() => ({ source: 'current message' }))], lesson: { id, title, frenchTitle, subject, phase, summary, primer, fiche, revision, objectives, prerequisites },
         profile: profileDefaults(current.profile), language, languageSource: input.language ? 'explicit request' : 'profile default', learnerMessage: input.message, history: lessonHistory(current, module.id) };
       const raw = await safeAI(ai, 'tutor', lessonInstructions, payload, images.length ? images : undefined);
       const session: LessonSession = { id: input.id, moduleId: module.id, createdAt: new Date().toISOString(),

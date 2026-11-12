@@ -72,6 +72,7 @@
 .ui-button-outline:hover:not(:disabled) { background: var(--ari-subtle); }
 .ui-button-ghost, .ui-button-icon { background: transparent; color: var(--ari-muted); }
 .ui-button-ghost:hover:not(:disabled), .ui-button-icon:hover:not(:disabled) { background: var(--ari-subtle); color: var(--ari-text); }
+.ui-button-ghost[aria-pressed="true"], .ui-button-icon[aria-pressed="true"] { background: var(--ari-accent-soft); color: var(--ari-accent); }
 .ui-button:disabled { cursor: default; opacity: .55; }
 .ui-button[aria-busy="true"] { opacity: 1; cursor: wait; }
 .ui-button[aria-busy="true"] > svg:not(.ari-sun) { display: none; }
@@ -309,3 +310,22 @@
 .ui-menu-label { padding: 6px 8px; color: var(--ari-muted); font-size: .7rem; }
 .ui-menu-separator { height: 1px; margin: 4px; background: var(--ari-border); }
 @media (pointer: coarse) { .ui-menu-item { min-height: 44px; } }
+
+.ui-tabs-list { display: flex; gap: 3px; min-width: 0; }
+.ui-tabs-trigger { padding: 7px 12px; border: 0; border-radius: var(--ari-radius-control); background: transparent; color: var(--ari-muted); font: inherit; font-size: .83rem; cursor: pointer; }
+.ui-tabs-trigger:hover { background: var(--ari-subtle); color: var(--ari-text); }
+.ui-tabs-trigger[data-active] { background: var(--ari-surface); color: var(--ari-accent); }
+.ui-tabs-trigger[data-disabled] { opacity: .5; cursor: default; }
+.ui-tabs-trigger:focus-visible { outline: 2px solid var(--ari-focus); outline-offset: 2px; }
+.ui-tabs-content[data-hidden] { display: none; }
+.ui-resizable-group { display: flex; width: 100%; min-width: 0; min-height: 0; }
+.ui-resizable-handle { --resize-highlight: color-mix(in srgb, var(--ari-border) 88%, var(--ari-text)); position: relative; z-index: 1; width: 1px; flex: 0 0 1px; background: var(--ari-border); }
+.ui-resizable-handle[hidden] { display: none; }
+.ui-resizable-handle::after { content: ''; position: absolute; inset: 0 -1px; background: transparent; }
+.ui-resizable-handle[data-separator="active"] { background: var(--resize-highlight); }
+.ui-resizable-handle:focus-visible:not([data-separator="active"])::after { background: var(--ari-focus); }
+.ui-resizable-handle:focus-visible { outline: none; }
+@media (hover: hover) and (pointer: fine) { .ui-resizable-handle[data-separator="hover"] { background: var(--resize-highlight); } }
+.ui-resizable-handle[aria-orientation="horizontal"] { width: 100%; height: 1px; }
+.ui-resizable-handle[aria-orientation="horizontal"]::after { inset: -1px 0; }
+@media (pointer: coarse) { .ui-tabs-trigger { min-height: 44px; } }

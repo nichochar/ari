@@ -14,6 +14,7 @@ import { PersonalizationError, PersonalizationWorkspace } from './personalizatio
 import { executeWorkspaceTool, personalizationInstructions, profileDefaults, workspaceTools } from './personalization-tools.js';
 import type { OnboardingAnswers } from '../shared/personalization.js';
 import { plotInstructions } from './ai.js';
+import { ficheContentSchema, ficheInstructions, updateLessonFiche } from './lesson-fiche.js';
 
 export class LearningError extends Error { constructor(public status: number, message: string) { super(message); } }
 const contextHash = (context: unknown[]) => createHash('sha256').update(JSON.stringify(context)).digest('hex');
@@ -25,7 +26,7 @@ const proposalInputSchema = z.object({ id: text(120).optional(), revision: z.num
   kind: z.enum(['curriculum', 'expand']), targetCurriculumId: text(120).optional(), targetLessonId: text(120).optional(),
   expansion: z.enum(['enrich', 'followup']).optional(), materialIds: z.array(text(120)).max(20).optional(), sourceUrls: z.array(z.url().max(2000)).max(15).optional(), lessons: z.array(outlineSchema).min(1).max(40) }).strict();
 const preparedExerciseSchema = exerciseSchema.omit({ id: true, moduleId: true, generated: true });
-const preparationSchema = z.object({ primer: text(20000), objectives: z.array(text(500)).min(1).max(12),
+const preparationSchema = z.object({ primer: text(20000), fiche: ficheContentSchema, objectives: z.array(text(500)).min(1).max(12),
   resources: z.array(z.object({ title: text(200), url: z.url().max(2000) }).strict()).max(15),
   exercises: z.array(preparedExerciseSchema).min(2).max(3) }).strict();
 const verificationSchema = z.object({ valid: z.boolean(), reason: z.string().max(2000) }).strict();
@@ -76,6 +77,7 @@ export class LearningService {
   readonly events = new EventEmitter();
   private tail: Promise<void> = Promise.resolve();
   private scheduled = new Set<string>();
+  private ficheJobs = new Map<string, Promise<LearningLesson>>();
   private stopped = false;
   private onboardingChecked = false;
   private streaming = new Map<string, string>();
@@ -84,6 +86,28 @@ export class LearningService {
   private async changed() { this.events.emit('change'); }
   private async generate<T = unknown>(instructions: string, payload: unknown, schema: Record<string, unknown>): Promise<T> {
     return this.requireProvider().generate<T>(instructions + '\n' + await personalizationInstructions(this.workspace), payload, schema);
+  }
+  async createFiche(lessonId: string): Promise<LearningLesson> {
+    const pending = this.ficheJobs.get(lessonId);
+    if (pending) return pending;
+    const task = this.generateFiche(lessonId);
+    this.ficheJobs.set(lessonId, task);
+    try { return await task; }
+    finally { this.ficheJobs.delete(lessonId); }
+  }
+  private async generateFiche(lessonId: string): Promise<LearningLesson> {
+    const lesson = (await this.store.readLearning()).lessons.find(item => item.id === lessonId);
+    if (!lesson || lesson.status !== 'ready') throw new LearningError(400, 'Prepare this lesson before creating its fiche.');
+    if (lesson.fiche) return lesson;
+    const schema = z.object({ content: ficheContentSchema }).strict();
+    const result = schema.parse(await this.generate(`Create the fiche for this existing lesson using the learner's current language preference.
+${ficheInstructions}`, { lesson }, jsonSchema(schema)));
+    const verdict = verificationSchema.parse(await this.generate('Independently verify this revision fiche against the lesson. Check correctness, scope, conditions, notation and usefulness as a concise learner reference. The number of entries is a matter of judgment. Return valid only when it is accurate and supported by the lesson.', { lesson, fiche: result.content }, jsonSchema(verificationSchema)));
+    if (!verdict.valid) throw new LearningError(422, 'The fiche did not pass its content check. Try again.');
+    const saved = await updateLessonFiche(this.store, { lessonId, revision: lesson.revision, content: result.content }, lessonId);
+    if (!('lesson' in saved) || saved.error) throw new LearningError(409, saved.error || 'The lesson changed. Try again.');
+    await this.changed();
+    return saved.lesson;
   }
   async view(): Promise<LearningView> {
     await this.ensureOnboarding();
@@ -471,7 +495,7 @@ export class LearningService {
       if (a.lessonId) { const lesson = d.lessons.find(l => l.id === a.lessonId); const offset = a.offset ?? 0, limit = a.limit ?? 6; const exercises = lesson ? allExercises.filter(e => e.moduleId === lesson.id) : []; return lesson ? { lesson, exercises: exercises.slice(offset, offset + limit), nextOffset: offset + limit < exercises.length ? offset + limit : null, progress: Object.values(state.progress).filter(p => exercises.some(e => e.id === p.exerciseId)).slice(offset, offset + limit) } : { error: 'Lesson not found.' }; }
       const curricula = d.curricula.filter(c => !a.curriculumId || c.id === a.curriculumId);
       const lessons = d.lessons.filter(l => curricula.some(c => c.id === l.curriculumId)); const offset = a.offset ?? 0, limit = a.limit ?? 15;
-      return { curricula: curricula.slice(0, 30).map(c => ({ ...c, description: c.description.slice(0, 3000), lessonCount: c.lessonIds.length, lessonIds: c.lessonIds.slice(0, 30) })), totalCurricula: curricula.length, totalLessons: lessons.length, nextOffset: offset + limit < lessons.length ? offset + limit : null, lessons: lessons.slice(offset, offset + limit).map(({ primer: _p, ...l }) => l), progress: Object.values(state.progress).filter(p => allExercises.some(e => e.id === p.exerciseId && lessons.some(l => l.id === e.moduleId))).slice(offset, offset + limit) };
+      return { curricula: curricula.slice(0, 30).map(c => ({ ...c, description: c.description.slice(0, 3000), lessonCount: c.lessonIds.length, lessonIds: c.lessonIds.slice(0, 30) })), totalCurricula: curricula.length, totalLessons: lessons.length, nextOffset: offset + limit < lessons.length ? offset + limit : null, lessons: lessons.slice(offset, offset + limit).map(({ primer: _p, fiche: _f, ...l }) => l), progress: Object.values(state.progress).filter(p => allExercises.some(e => e.id === p.exerciseId && lessons.some(l => l.id === e.moduleId))).slice(offset, offset + limit) };
     }
     if (name === 'propose_learning') {
       const a = proposalInputSchema.parse(raw);
@@ -553,15 +577,19 @@ export class LearningService {
     const payload = { lesson, curriculum, proposal, profile: profileDefaults(state.profile), progress: Object.values(state.progress).filter(p => exerciseIds.has(p.exerciseId)).slice(-100), reflections: state.reflections.filter(r => exerciseIds.has(r.exerciseId)).slice(-20), materials, sources };
     const allowedResources = new Set([...materials.flatMap(m => m.url ? [m.url] : []), ...sources.map(s => s.url), ...lesson.resources.map(r => r.url)]);
     const preparationInstructions = `Prepare this accepted learning lesson for the learner using the current language preference in USER.md or explicit learner request throughout the primer and exercises. profile.language (en means English, fr means French) is only a fallback default. Current USER.md preferences take precedence over structured profile defaults and older notes. Respect the accepted scope, level and topic. Preserve any lesson duration explicitly accepted in the lesson, curriculum or proposal; it takes precedence over a generic session-duration preference in the learner profile.
-Return a self-contained lesson and 2–3 original, subject-appropriate, answerable exercises. Develop the explanation fully enough to teach the accepted objectives, usually 400–800 words, with more room when the scope warrants it; this is guidance, not a word limit or a reason to add padding. Use the accepted duration to choose depth and examples. Keep study schedules, section timings and suggested stopping points out of the primer. Normally omit a length estimate. If the learner wants one, give a single approximate total at the top of the primer, rounded to the nearest 15 minutes (for example, “About 45 minutes”).
+Return a self-contained lesson, its fiche in the separate fiche field, and 2–3 original, subject-appropriate, answerable exercises.
+${ficheInstructions}
+Generate the fiche with the lesson even when the learner has never discussed it. Keep it out of the primer because the application displays it separately.
+ Develop the explanation fully enough to teach the accepted objectives, usually 400–800 words, with more room when the scope warrants it; this is guidance, not a word limit or a reason to add padding. Use the accepted duration to choose depth and examples. Keep study schedules, section timings and suggested stopping points out of the primer. Normally omit a length estimate. If the learner wants one, give a single approximate total at the top of the primer, rounded to the nearest 15 minutes (for example, “About 45 minutes”).
 Explain why the topic is useful and connect it to relevant prior ideas; develop the core ideas with symbols and units explained where applicable. Use the setting and notation of the worked example. Introduce a distinction or a special case at the step where it changes the reasoning. Skip prerequisite reminders the learner has no use for here. Explain where important relationships come from and state their assumptions. Include worked examples distinct from the graded exercises, then common pitfalls or reasonableness checks. Teach each method required by an exercise here or identify it as an established prerequisite; do not introduce an unexplained method only in an exercise.
 Give explicit numbered asks in multipart problems, and grade only those asks. Use a few short paragraphs or light subheadings. Add useful context, not repetition or padding, and do not reveal exercise solutions or duplicate the lesson title. Graded exercises must be assessable from written answers, notation or a photo of written work. Physical or audio practice may be ungraded primer activities; never award rubric points for unobservable performance, tapping or timing. Each exercise needs exactly three progressive hints that guide a next step without giving the final answer or complete construction, either separately or collectively, a correct worked solution and an explicit rubric totaling 10 points.
-Cite only actual supplied sources or verified links in resources; do not invent references. Common introductory knowledge may be taught without citations; uncertain, specialized or current claims require appropriate grounding. Use Markdown and valid LaTeX only when mathematical expressions are relevant. Never assume this is mathematics or physics.
+Do not add a further-reading section or suggested reading list. Cite supplied or verified sources inline where they support a claim; resources is only provenance for those citations, not recommendations. Do not invent references. Common introductory knowledge may be taught without citations; uncertain, specialized or current claims require appropriate grounding. Use Markdown and valid LaTeX only when mathematical expressions are relevant. Never assume this is mathematics or physics.
 When a visual makes a relationship easier to see, put a fenced plot block in the primer beside the worked step and tell the learner what to notice. For instance, show the original vector and its projection using the same coordinates as the example. One well-chosen plot is usually enough. Omit it when the text or equation already does the job.
 During enrichment develop the proposed material while preserving previously completed exercises.
 ${plotInstructions}`;
     const verificationInstructions = `Independently verify this lesson and exercises against the accepted proposal, topic, starting level, objectives and duration. Check that the explanation develops the accepted scope rather than compressing it into a formula summary; evaluate completeness rather than a rigid word count.
 Each method needed by an exercise must be explained in the primer or supported by an established prerequisite. Reject rubric criteria that penalize work the prompt never requested. Check that graded prompts and every rubric criterion are assessable from written answers, notation or photos of written work; reject points for unobservable physical or audio performance, tapping or timing. Physical or audio practice may appear only as ungraded primer activities.
+Check that the fiche selects useful things to remember, agrees with the lesson, and includes correct conditions and notation. Judge relevance and precision, with no target number of entries.
 Check that the primer explains the ideas with useful context, a relevant worked example and a pitfall or check, rather than only listing definitions or formulas; judge usefulness rather than a rigid word count. Check that prompts are clear and answerable, worked answers are correct, hints progress without revealing full solutions, rubrics fit the subject and total 10, and supplied or required sources support the lesson. Require grounding for uncertain, specialized or current claims, but do not reject common introductory knowledge solely because no sources were supplied. Reject irrelevant, ambiguous, unsupported or incorrect content.
 Check that the primer reads as a lesson, with side cases tied to its examples and no study schedule in the prose. An optional length estimate belongs only at the top, as a rough total in 15-minute increments. If the primer includes a plot, check its syntax and that its geometry, labels and values support the adjacent explanation. A lesson can be complete without a plot. Return valid and a concise reason.
 ${plotInstructions}`;
@@ -601,7 +629,7 @@ ${plotInstructions}`;
     await this.store.updateLearning(s => {
       const l = s.lessons.find(l => l.id === lesson.id)!;
       const exercises: Exercise[] = ready.exercises.map(e => ({ ...e, id: `generated-${randomUUID()}`, moduleId: l.id, generated: true }));
-      l.primer = ready.primer; l.objectives = ready.objectives; l.resources = [...new Map([...ready.resources, ...sources.map(source => ({ title: source.title, url: source.url })), ...materials.flatMap(material => material.url ? [{ title: material.title, url: material.url }] : [])].map(source => [source.url, source])).values()]; l.status = 'ready'; delete l.error;
+      l.primer = ready.primer; l.fiche = ready.fiche; l.objectives = ready.objectives; l.resources = [...new Map([...ready.resources, ...sources.map(source => ({ title: source.title, url: source.url })), ...materials.flatMap(material => material.url ? [{ title: material.title, url: material.url }] : [])].map(source => [source.url, source])).values()]; l.status = 'ready'; delete l.error;
       if (enrich) { l.revision++; l.exerciseIds.push(...exercises.map(e => e.id)); }
       else l.exerciseIds = exercises.map(e => e.id);
       s.exercises.push(...exercises);

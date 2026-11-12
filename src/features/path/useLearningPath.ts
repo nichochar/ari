@@ -5,6 +5,7 @@ import { courseModules, type Study } from '../../app/useStudy';
 import { mergeSessions } from '../../app/session-state';
 import { post, errorText } from '../../lib/api';
 import { useLearning, learningApi, learningError } from '../../useLearning';
+import { useLessonWorkspace } from './useLessonWorkspace';
 export type OutgoingLessonMessage = {
   id: string; createdAt: string; request: LessonChatRequest;
   status: 'sending' | 'failed'; error?: string;
@@ -12,6 +13,7 @@ export type OutgoingLessonMessage = {
 
 const moduleKey = 'ari:selectedModuleId';
 export function useLearningPath(study: Study, learning: ReturnType<typeof useLearning>, onSelectExercise: (id: string) => void, setActionError: (message: string) => void) {
+  const workspace = useLessonWorkspace();
   const { state, setState, allModules, catalog } = study;
   const [selectedModuleId, setSelectedModuleId] = useState(() => {
     const saved = appStorage.getItem(moduleKey);
@@ -19,6 +21,7 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
   });
   const [curriculumId, setCurriculumId] = useState(() => appStorage.getItem('ari:curriculum') || '');
   const [prepareBusy, setPrepareBusy] = useState(false);
+  const [ficheRequests, setFicheRequests] = useState<Record<string, { pending: boolean; error?: string }>>({});
   const [lessonDrafts, setLessonDrafts] = useState<Record<string, string>>({});
   const [outgoingLessonMessages, setOutgoingLessonMessages] = useState<OutgoingLessonMessage[]>([]);
   const lessonBusyRef = useRef(new Map<string, string>());
@@ -60,6 +63,7 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     const owner = learning.data?.curricula.find(item => item.lessonIds.includes(moduleId));
     if (owner) setCurriculumId(owner.id);
     setSelectedModuleId(moduleId);
+    workspace.setTab(moduleId, 'lesson');
   }
   function openCurriculum(id: string) {
     setCurriculumId(id);
@@ -82,6 +86,7 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
         lessonSessions: mergeSessions(current.lessonSessions, [session]),
       } : current);
       setOutgoingLessonMessages(current => current.filter(item => item.id !== outgoing.id));
+      await learning.refresh();
     } catch (error) {
       setOutgoingLessonMessages(current => current.map(item => item.id === outgoing.id
         ? { ...item, status: 'failed', error: errorText(error) } : item));
@@ -103,6 +108,20 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     void deliverLessonMessage(outgoing);
     return true;
   }
+  async function createFiche(moduleId: string) {
+    if (ficheRequests[moduleId]?.pending) return;
+    setFicheRequests(current => ({ ...current, [moduleId]: { pending: true } }));
+    try {
+      await learningApi('/lessons/' + encodeURIComponent(moduleId) + '/fiche', {});
+      await learning.refresh();
+      setFicheRequests(current => ({ ...current, [moduleId]: { pending: false } }));
+    } catch (error) {
+      setFicheRequests(current => ({ ...current, [moduleId]: { pending: false, error: errorText(error) } }));
+    }
+  }
+  function dismissFicheError(moduleId: string) {
+    setFicheRequests(current => ({ ...current, [moduleId]: { pending: false } }));
+  }
   async function generateExercise(moduleId: string, difficulty: Difficulty) {
     if (generationBusy) return;
     setGenerationBusy(true);
@@ -115,8 +134,8 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     finally { setGenerationBusy(false); }
   }
 
-  return { activeCurriculum, completedLessonIds, pathModules, selectedModule, selectedLesson, selectedModuleId, setSelectedModuleId,
-    prepareBusy, prepareLesson, lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts,
+  return { workspace, activeCurriculum, completedLessonIds, pathModules, selectedModule, selectedLesson, selectedModuleId, setSelectedModuleId,
+    prepareBusy, prepareLesson, ficheRequests, createFiche, dismissFicheError, lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts,
     sendLessonMessage, deliverLessonMessage, generationBusy, generationDifficulty, setGenerationDifficulty,
     generateExercise, showLesson, openCurriculum };
 }

@@ -9,6 +9,7 @@ import { createPersonalizedAsk } from '../server/personalization-ai.js';
 import { PersonalizationWorkspace } from '../server/personalization.js';
 import { LearningProviderError } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
+import { updateLessonFiche } from '../server/lesson-fiche.js';
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), 'ari-personalized-ai-'));
@@ -17,6 +18,42 @@ async function fixture() {
   await workspace.ready();
   return { store, workspace, close: async () => { store.close(); await rm(dir, { recursive: true, force: true }); } };
 }
+
+test('lesson chat fiche edits stay scoped, survive failed replies and preserve later revisions on retry', async () => {
+  const fx = await fixture();
+  const before = await fx.store.readLearning();
+  const lesson = before.lessons[0], other = before.lessons[1];
+  const content = '**Definition**\nA compact reference.';
+  let fail = true;
+  const provider = fixtureLearningProvider(async request => {
+    assert.ok(request.tools.some(tool => tool.name === 'update_lesson_fiche'));
+    const outside = await request.executeTool('update_lesson_fiche', { lessonId: other.id, revision: other.revision, content }, 'outside') as { error: string };
+    assert.ok(outside.error);
+    const result = await request.executeTool('update_lesson_fiche', { lessonId: lesson.id, revision: lesson.revision, content }, 'edit') as { lesson: { fiche: string }; error?: string };
+    if (fail) { assert.equal(result.lesson.fiche, content); throw new Error('Reply interrupted after saving.'); }
+    assert.ok(result.error);
+    assert.equal(result.lesson.fiche, content + '\n\nA later learner correction.');
+    return { output: [], text: JSON.stringify({ feedback: 'Your newer correction is saved.' }), inputTokens: 50 };
+  });
+  const ask = createPersonalizedAsk(async () => ({}), provider, fx.workspace, undefined, fx.store)!;
+  const payload = { lesson, learnerMessage: 'Add this definition to my fiche.' };
+  try {
+    await assert.rejects(ask('tutor', 'Help with this lesson.', payload), /Reply interrupted/);
+    const saved = (await fx.store.readLearning()).lessons[0];
+    assert.deepEqual(saved, { ...lesson, fiche: content, revision: lesson.revision + 1 });
+    const duplicate = await updateLessonFiche(fx.store, { lessonId: lesson.id, revision: lesson.revision, content }, lesson.id);
+    assert.ok('lesson' in duplicate);
+    assert.equal(duplicate.lesson.revision, saved.revision);
+    await updateLessonFiche(fx.store, { lessonId: lesson.id, revision: saved.revision, content: content + '\n\nA later learner correction.' }, lesson.id);
+    fail = false;
+    await ask('tutor', 'Help with this lesson.', payload);
+    const after = await fx.store.readLearning();
+    assert.deepEqual(after.lessons[1], other);
+    assert.deepEqual(after.exercises, before.exercises);
+    assert.equal(after.lessons[0].revision, lesson.revision + 2);
+    assert.equal((await fx.store.readLessonRevisions(lesson.id)).length, 3);
+  } finally { await fx.close(); }
+});
 
 test('interactive tutoring receives structured image requests and file tools, persists edits, and refreshes the next turn', async () => {
   const fx = await fixture();

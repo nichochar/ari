@@ -3,7 +3,7 @@ export type Difficulty = 'warmup' | 'practice' | 'stretch';
 export type Language = 'en' | 'fr';
 export interface Module {
   id: string; subject: Subject; title: string; frenchTitle: string; phase: number;
-  summary: string; primer: string; objectives: string[]; prerequisites: string[];
+  summary: string; primer: string; fiche?: string; objectives: string[]; prerequisites: string[];
   exerciseIds: string[]; resources: { title: string; url: string }[];
 }
 export interface Exercise {

@@ -2,6 +2,7 @@ import type { LearningAgentProvider, LearningAgentRequest } from '../../server/l
 
 export const preparedLesson = {
   primer: 'A historical source reflects its author, audience and purpose. Compare its claims with independent evidence.',
+  fiche: '**Source evaluation**\nIdentify the author, audience and purpose, then compare the claim with independent evidence.',
   objectives: ['Identify an author’s claim and evaluate supporting evidence.'], resources: [],
   exercises: [1, 2].map(index => ({ title: `Evaluate source ${index}`, difficulty: 'practice' as const, minutes: 10,
     prompt: 'A mayor claims that a new park improved everyone’s health. Identify one piece of independent evidence needed to assess the claim.',

@@ -549,7 +549,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   if (existsSync(join(dist, 'index.html'))) {
     app.use(express.static(dist));
-    app.use((req, res, next) => { if (req.method !== 'GET') return next(); res.sendFile(join(dist, 'index.html')); });
+    app.use((req, res, next) => { if (req.method !== 'GET') return next(); res.sendFile('index.html', { root: resolve(dist) }); });
   }
   app.use((error: unknown, _req: Request, res: Response, _next: (error?: unknown) => void) => {
     if (res.headersSent) return;

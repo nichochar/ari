@@ -1,3 +1,4 @@
+import { AppLink } from '../components/app-link';
 import type { ReactNode } from 'react';
 import { BookOpen, CheckCircle2, ClipboardCheck, History, Menu, Settings2, Target } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -14,10 +15,10 @@ function navIcon(view: View) {
 
 type AppShellProps = {
   navigation: Navigation; learnerName: string; completed: { exercises: number; lessons?: number; assessments?: number }; unreadCount: number;
-  onNavigate: (view: View) => void; children: ReactNode; overlays: ReactNode;
+  children: ReactNode; overlays: ReactNode;
 };
-export function AppShell({ navigation, learnerName, completed, unreadCount, onNavigate, children, overlays }: AppShellProps) {
-  const { view, sidebarCollapsed, setSidebarCollapsed, mobileMenu, setMobileMenu } = navigation;
+export function AppShell({ navigation, learnerName, completed, unreadCount, children, overlays }: AppShellProps) {
+  const { view, route, sectionHref, sidebarCollapsed, setSidebarCollapsed, mobileMenu, setMobileMenu } = navigation;
   return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenu ? 'sidebar-open' : '')}>
       <div className="brand"><AriWordmark className="brand-wordmark" height={34} /><AriMark className="brand-mark" size={42} label="Ari" /></div>
@@ -26,11 +27,10 @@ export function AppShell({ navigation, learnerName, completed, unreadCount, onNa
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><Menu size={19} /></Button>
       <nav className="main-nav" aria-label="Main navigation">
         {(['desk', 'chat', 'path', 'assessments', 'journal', 'settings'] as View[]).map(item =>
-          <Button variant="plain" key={item} title={labels[item]} aria-label={labels[item] + ((item === 'chat' || item === 'path') && unreadCount ? ', unread message' : '')} aria-current={view === item ? 'page' : undefined}
-            className={'nav-item ' + (view === item ? 'active' : '')}
-            onClick={() => { onNavigate(item); }}>
+          <AppLink to={sectionHref(item)} variant="plain" key={item} title={labels[item]} aria-label={labels[item] + ((item === 'chat' || item === 'path') && unreadCount ? ', unread message' : '')} aria-current={route.found && view === item ? 'page' : undefined}
+            className={'nav-item ' + (route.found && view === item ? 'active' : '')}>
             {navIcon(item)}<span>{labels[item]}</span>{(item === 'chat' || item === 'path') && !!unreadCount && <><i className="unread-dot" aria-hidden="true" /><span className="sr-only">Unread message</span></>}
-          </Button>,
+          </AppLink>,
         )}
       </nav>
       <div className="sidebar-foot">

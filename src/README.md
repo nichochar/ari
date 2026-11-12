@@ -16,6 +16,19 @@
 | `components/chat.tsx`, `components/ui/` | Shared chat affordances and UI controls |
 | `lib/api.ts` | JSON transport, errors and explicit request timeouts |
 
+## Navigation
+
+React Router's BrowserRouter wraps the root App. `app/routes.ts` owns URL matching/builders; `useNavigation` owns navigation and resume preferences. `useRouteState` waits for catalog hydration before validating destinations. Keep feature hooks mounted above view switches.
+
+- `/learn` lists curricula; `/learn/:curriculumId` lists its lessons.
+- `/learn/:curriculumId/lessons/:lessonId` opens the workspace; `?tab=fiche` or `?tab=exercises` selects content.
+- `/study/:exerciseId` and `/assessments/:assessmentId` open saved work.
+- `/chat`, `/journal`, `/settings` are the other sections. Chat uses `?focus=` and `?message=`; Journal uses `?reflection=` for contextual links.
+
+An explicit URL always wins over saved selections. `/` resumes the last destination (or starts onboarding), and `/study` resolves the remembered/default exercise. These redirects replace history; user navigation pushes history. Lesson tabs replace the current entry. Unknown destinations show a recovery link without selecting unrelated content. Page scroll restores by history entry; lesson reading/chat positions remain scoped to their lesson.
+
+Use `AppLink` for navigational links and the navigation helper for completed actions and Select changes. Both preserve the onboarding preview namespace. Never put drafts, photos or learner notes into URLs. Pane widths/open state remain local preferences. Browser Back must invoke the same capture cancellation and exercise ownership boundaries as clicking through the UI.
+
 ## State and request lifetimes
 
 The desk, path, journal and settings hooks run unconditionally in `App`. Their views may unmount when navigating; their drafts, pending requests and retry data must survive. Do not move these hooks inside conditional page components. Camera capture is the exception: leaving the desk stops the preview and cancels an unfinished capture.

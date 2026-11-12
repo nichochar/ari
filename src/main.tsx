@@ -1,5 +1,6 @@
 import { appStorage } from './storage';
 import React from 'react';
+import { BrowserRouter } from 'react-router';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './theme.css';
@@ -10,4 +11,4 @@ import './components/ui.css';
 try { appStorage.removeItem('ari:palette'); } catch { /* Storage can be unavailable. */ }
 if (window.location.hash === '#appearance')
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><BrowserRouter><App /></BrowserRouter></React.StrictMode>);

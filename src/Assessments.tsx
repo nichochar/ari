@@ -7,6 +7,8 @@ import type { AssessmentListView, AssessmentReview, AssessmentSummary, Assessmen
 import { Markdown } from './Markdown';
 import { useCamera } from './useCamera';
 import { appStorage } from './storage';
+import { AppLink } from './components/app-link';
+import { assessmentPath } from './app/routes';
 import { errorText, requestJson } from './lib/api';
 import { PageHeader } from './components/page-header';
 import { ChatComposer, ChatMessage, ChatWaiting } from './components/chat';
@@ -79,16 +81,17 @@ function hasCompletedReview(item: AssessmentSummary) {
   return item.latestMaxScore !== null;
 }
 
-export function Assessments({ history, curricula, lessons, initialCurriculumId }: {
+export function Assessments({ history, curricula, lessons, initialCurriculumId, selectedId, onSelect }: {
   history: ReturnType<typeof useAssessmentList>; curricula: Curriculum[]; lessons: LearningLesson[]; initialCurriculumId?: string;
+  selectedId: string | null; onSelect: (id: string | null) => void;
 }) {
   const { list, error, setError, refresh } = history;
-  const [selectedId, setSelectedId] = useState<string | null>(() => readDraft<string | null>('ari:assessment:selected', null));
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [newOpen, setNewOpen] = useState(false);
   const [curriculumId, setCurriculumId] = useState(initialCurriculumId || curricula[0]?.id || '');
   const [creating, setCreating] = useState(false);
   const [createRequest, setCreateRequest] = useState<{ id: string; curriculumId: string } | null>(null);
-  useEffect(() => { saveDraft('ari:assessment:selected', selectedId); }, [selectedId]);
   useEffect(() => { if (!curriculumId && curricula.length) setCurriculumId(initialCurriculumId || curricula[0].id); }, [curricula, curriculumId, initialCurriculumId]);
   const eligible = lessons.filter(lesson => lesson.curriculumId === curriculumId && lesson.status === 'ready');
   async function create() {
@@ -97,17 +100,18 @@ export function Assessments({ history, curricula, lessons, initialCurriculumId }
     setCreateRequest(request); setCreating(true); setError('');
     try {
       const view = await assessmentApi<AssessmentView>('', request);
-      setSelectedId(view.id); setNewOpen(false); setCreateRequest(null); void refresh();
+      if (mounted.current) { onSelect(view.id); setNewOpen(false); setCreateRequest(null); }
+      void refresh();
     } catch (failure) { setError(errorText(failure)); }
     finally { setCreating(false); }
   }
   return <>
     {selectedId ? <AssessmentSession key={selectedId} id={selectedId} curricula={curricula} lessons={lessons}
-      onBack={() => { setSelectedId(null); void refresh(); }} onChange={() => void refresh()} /> : <>
+      onBack={() => { onSelect(null); void refresh(); }} onChange={() => void refresh()} /> : <>
       <PageHeader title="Assessments" actions={<Button onClick={() => { setError(''); setNewOpen(true); }} disabled={!curricula.length}><Plus size={16} />New assessment</Button>} />
       {error && <Alert variant="destructive">{error} <Button variant="ghost" onClick={() => void refresh()}>Retry</Button></Alert>}
       {!list ? !error && <ChatWaiting label="Loading assessments" /> : list.assessments.length ? <div className="assessment-history">
-        {list.assessments.map(item => <AssessmentHistoryItem key={item.id} item={item} curriculum={curricula.find(curriculum => curriculum.id === item.curriculumId)} onOpen={() => setSelectedId(item.id)} />)}
+        {list.assessments.map(item => <AssessmentHistoryItem key={item.id} item={item} curriculum={curricula.find(curriculum => curriculum.id === item.curriculumId)} />)}
       </div> : <div className="assessment-empty"><AriMark size={44} /><h2>A fresh paper, at your pace</h2>
         <p>{curricula.length ? 'Choose a curriculum to put your learning into practice.' : 'Create a curriculum and prepare a lesson to begin.'}</p>
         {!!curricula.length && <Button variant="outline" onClick={() => setNewOpen(true)}>New assessment</Button>}</div>}
@@ -126,12 +130,12 @@ export function Assessments({ history, curricula, lessons, initialCurriculumId }
   </>;
 }
 
-function AssessmentHistoryItem({ item, curriculum, onOpen }: { item: AssessmentSummary; curriculum?: Curriculum; onOpen: () => void }) {
+function AssessmentHistoryItem({ item, curriculum }: { item: AssessmentSummary; curriculum?: Curriculum }) {
   return <Card className="assessment-history-item"><div><div className="assessment-history-meta">{curriculum?.title || 'Curriculum'} · {dateText(item.createdAt)}</div>
     <h2>{item.title}</h2><p>{statusText[item.status]} · {item.minutes} min suggested{item.problemCount ? ` · ${item.problemCount} problems` : ''}
       {hasCompletedReview(item) && ` · ${item.latestScore === null ? 'Not scored' : item.latestScore} / ${item.latestMaxScore}`}</p>
     {item.error && <p className="inline-error">{item.error}</p>}</div>
-    <Button variant="outline" onClick={onOpen}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</Button></Card>;
+    <AppLink variant="outline" to={assessmentPath(item.id)}>{item.status === 'reviewed' ? 'Review' : item.status === 'paused' ? 'Resume' : 'Open'}</AppLink></Card>;
 }
 
 function AssessmentSession({ id, curricula, lessons, onBack, onChange }: {

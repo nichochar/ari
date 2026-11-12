@@ -13,10 +13,10 @@ import { promptReference } from 'ari-plot';
 import { LearningProviderError, type LearningAgentProvider } from '../server/learning-provider.js';
 import { fixtureLearningProvider } from './fixtures/learning.js';
 
-async function fixture(ai?: AIAsk, personalizationProvider?: LearningAgentProvider) {
+async function fixture(ai?: AIAsk, personalizationProvider?: LearningAgentProvider, distPath?: string) {
   const dir = await mkdtemp(join(tmpdir(), 'ari-test-'));
   const path = join(dir, 'state.sqlite');
-  const options = { dbPath: path, legacyStatePath: join(dir, 'legacy.json'), ai, aiConfigured: Boolean(ai), personalizationProvider, model: 'test' };
+  const options = { dbPath: path, legacyStatePath: join(dir, 'legacy.json'), ai, aiConfigured: Boolean(ai), personalizationProvider, model: 'test', distPath };
   let app = createApp(options);
   let server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
@@ -36,6 +36,23 @@ async function fixture(ai?: AIAsk, personalizationProvider?: LearningAgentProvid
   });
   return { path, dir, close, restart, request };
 }
+
+test('deep links serve the app from a hidden build directory while unknown APIs stay JSON 404s', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ari-routing-'));
+  const dist = join(dir, '.preview', 'dist');
+  await mkdir(dist, { recursive: true });
+  await writeFile(join(dist, 'index.html'), '<!doctype html><title>Synthetic Ari</title>');
+  const fx = await fixture(undefined, undefined, dist);
+  try {
+    const page = await fx.request('/learn/curriculum/lessons/lesson?tab=fiche');
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type') || '', /text\/html/);
+    assert.match(await page.text(), /Synthetic Ari/);
+    const missing = await fx.request('/api/not-a-route');
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: 'API route not found.' });
+  } finally { await fx.close(); await rm(dir, { recursive: true, force: true }); }
+});
 
 test('personalization REST edits, history and restores persist and reject stale writes', async () => {
   const fx = await fixture();

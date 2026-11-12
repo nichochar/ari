@@ -329,3 +329,6 @@
 .ui-resizable-handle[aria-orientation="horizontal"] { width: 100%; height: 1px; }
 .ui-resizable-handle[aria-orientation="horizontal"]::after { inset: -1px 0; }
 @media (pointer: coarse) { .ui-tabs-trigger { min-height: 44px; } }
+
+a.ui-button { text-decoration: none; }
+:where(a.ui-button-plain) { color: inherit; }

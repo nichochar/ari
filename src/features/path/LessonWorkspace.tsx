@@ -51,9 +51,9 @@ export function LessonWorkspace({ id, ready, workspace, lesson, fiche, exercises
   const panels = useLessonPanels({ open, wide, chatWidth: workspace.chatWidth,
     onOpenChange: wide ? workspace.setChatOpen : workspace.setMobileChatOpen, onWidthChange: workspace.setChatWidth });
   const readingVisible = wide || !open;
-  const tab = ready ? workspace.tabs[id] ?? 'lesson' : 'lesson';
+  const tab = ready ? workspace.tab : 'lesson';
   return <Card ref={ref} className="lesson-workspace">
-    <Tabs value={tab} onValueChange={value => workspace.setTab(id, value as LessonTab)} className="lesson-workspace-tabs">
+    <Tabs value={tab} onValueChange={value => workspace.setTab(value as LessonTab)} className="lesson-workspace-tabs">
       <div className="lesson-toolbar">
         <TabsList aria-label="Lesson content">{(Object.keys(tabNames) as LessonTab[]).map(value =>
           <TabsTrigger key={value} value={value} disabled={!ready && value !== 'lesson'}

@@ -93,3 +93,24 @@ test('cached reads remain usable when storage becomes blocked without hiding nor
   blocked = true;
   assert.equal(scoped.getItem('ari:mainDraft'), 'Updated in another tab');
 });
+
+
+test('URL tab and focus changes preserve fallback drafts within one preview namespace', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const location = { search: '?onboardingPreview=' + firstId };
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+    location, get localStorage() { throw new Error('Storage blocked'); },
+  } });
+  try {
+    appStorage.setItem('ari:routingDraft', 'Keep this unsent message');
+    location.search += '&tab=fiche';
+    assert.equal(appStorage.getItem('ari:routingDraft'), 'Keep this unsent message');
+    location.search = '?focus=curriculum&onboardingPreview=' + firstId.toUpperCase();
+    assert.equal(appStorage.getItem('ari:routingDraft'), 'Keep this unsent message');
+    location.search = '?onboardingPreview=' + secondId;
+    assert.equal(appStorage.getItem('ari:routingDraft'), null);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'window', original);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+});

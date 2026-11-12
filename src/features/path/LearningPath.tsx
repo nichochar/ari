@@ -1,10 +1,9 @@
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { PageHeader } from '../../components/page-header';
 import { Markdown } from '../../Markdown';
 import type { AppState, Exercise } from '../../../shared/types';
 import { AriMark, AriSun } from '../../components/ui/ari-mark';
-import { Select } from '../../components/ui/select';
 import { useLearning } from '../../useLearning';
 import type { LearningPathController } from './useLearningPath';
 import { LessonConversation } from './LessonConversation';
@@ -13,22 +12,28 @@ import { LessonPicker } from './LessonPicker';
 import { LessonExercises } from './LessonExercises';
 import { LessonWorkspace } from './LessonWorkspace';
 import { Alert } from '../../components/ui/alert';
+import { AppLink } from '../../components/app-link';
+import { curriculumPath } from '../../app/routes';
+import { CurriculumOverview } from './CurriculumOverview';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../../components/ui/tooltip';
 
 type LearningPathProps = {
   path: LearningPathController; state: AppState; catalog: Exercise[];
-  learning: ReturnType<typeof useLearning>; selectExercise: (id: string) => void;
-  openCurriculum: (id: string) => void; openChat: (focusId: string, starter?: string) => void; actionError: string;
+  learning: ReturnType<typeof useLearning>;
+  curriculumId?: string; lessonId?: string; openChat: (focusId: string, starter?: string) => void; actionError: string;
 };
-export function LearningPath({ path, state, catalog, learning, selectExercise, openCurriculum, openChat, actionError }: LearningPathProps) {
+export function LearningPath({ path, state, catalog, learning, curriculumId, lessonId, openChat, actionError }: LearningPathProps) {
   const { activeCurriculum, selectedModule, selectedLesson, prepareBusy, prepareLesson,
     lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts, sendLessonMessage, deliverLessonMessage } = path;
   const ready = !selectedLesson || selectedLesson.status === 'ready';
+  if (!lessonId && learning.data) return <CurriculumOverview data={learning.data} path={path} curriculumId={curriculumId}
+    explore={() => openChat('', 'I’d like to learn a new subject. ')} />;
   return <section className="page learning-workspace-page">
-    <PageHeader title="Learning path" actions={<Button variant="ghost" size="sm" onClick={() => openChat('', 'I’d like to learn a new subject. ')}><Plus size={14} />Explore a new subject</Button>} />
+    <PageHeader title={<Tooltip><TooltipTrigger render={<span className="curriculum-title" tabIndex={0} />}>{activeCurriculum?.title}</TooltipTrigger><TooltipContent>{activeCurriculum?.title}</TooltipContent></Tooltip>}
+      actions={<AppLink to="/learn" variant="ghost" size="sm"><ArrowLeft size={15} />All curricula</AppLink>} />
     <div className="lesson-navigation">
-      {learning.data && <Select id="path-curriculum" aria-label="Curriculum" value={activeCurriculum?.id || ''} onValueChange={openCurriculum}
-        options={learning.data.curricula.map(item => ({ value: item.id, label: item.title }))} />}
       {selectedModule && <LessonPicker path={path} />}
+      {activeCurriculum && <AppLink to={curriculumPath(activeCurriculum.id)} variant="ghost" size="sm">All lessons</AppLink>}
     </div>
     {selectedModule && <LessonWorkspace id={selectedModule.id} ready={ready} workspace={path.workspace}
       lesson={<article className="lesson-article">
@@ -40,7 +45,7 @@ export function LearningPath({ path, state, catalog, learning, selectExercise, o
       </article>}
       fiche={ready && <LessonFiche key={selectedModule.id} title={selectedModule.title} content={selectedModule.fiche} {...path.ficheRequests[selectedModule.id]}
         onCreate={() => void path.createFiche(selectedModule.id)} onDismiss={() => path.dismissFicheError(selectedModule.id)} />}
-      exercises={ready && <LessonExercises path={path} state={state} catalog={catalog} selectExercise={selectExercise} />}
+      exercises={ready && <LessonExercises path={path} state={state} catalog={catalog} />}
       chat={visible => ready && <LessonConversation key={selectedModule.id} moduleId={selectedModule.id} sessions={lessonSessions} outgoing={lessonOutgoing}
         visible={visible} position={path.workspace.chatPosition(selectedModule.id)}
         draft={lessonDrafts[selectedModule.id] || ''} onDraft={value => setLessonDrafts(current => ({ ...current, [selectedModule.id]: value }))}

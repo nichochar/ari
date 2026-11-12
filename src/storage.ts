@@ -34,10 +34,12 @@ export function createScopedStorage(storage: StorageAccess | (() => StorageAcces
 const scopes = new Map<string, StorageAccess>();
 function currentStorage() {
   const search = typeof window === 'undefined' ? '' : window.location.search;
-  let storage = scopes.get(search);
+  const previewId = new URLSearchParams(search).get('onboardingPreview');
+  const scope = previewId && previewIdPattern.test(previewId) ? previewId.toLowerCase() : '';
+  let storage = scopes.get(scope);
   if (!storage) {
     storage = createScopedStorage(() => window.localStorage, search);
-    scopes.set(search, storage);
+    scopes.set(scope, storage);
   }
   return storage;
 }

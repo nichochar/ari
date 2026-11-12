@@ -37,6 +37,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.0.0",
     "react-resizable-panels": "^4.21.0",
+    "react-router": "^8.5.1",
     "rehype-katex": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",

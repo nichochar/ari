@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { appStorage } from '../storage';
 import { diagnosticIds, exercises, modules } from '../../shared/curriculum';
 import type { AppState, Exercise, Health, Module } from '../../shared/types';
@@ -9,12 +9,13 @@ const curated = exercises as Exercise[];
 export const courseModules = modules as Module[];
 const selectedKey = 'ari:selectedExerciseId';
 
-export function useStudy(learningData: LearningView | null) {
+export function useStudy(learningData: LearningView | null, routedExerciseId?: string) {
   const [state, setState] = useState<AppState | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [nativeAvailable, setNativeAvailable] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [selectedId, setSelectedId] = useState('');
+  const [rememberedId, setSelectedId] = useState('');
+  const selectedId = routedExerciseId ?? rememberedId;
   const selectedIdRef = useRef('');
   const restoredExerciseRef = useRef(appStorage.getItem(selectedKey));
   const load = useCallback(async () => {
@@ -32,8 +33,6 @@ export function useStudy(learningData: LearningView | null) {
         : diagnosticIds.find(id => next.progress[id]?.status !== 'completed')
           || catalog.find(item => next.progress[item.id]?.status !== 'completed')?.id
           || catalog[0]?.id || '';
-      selectedIdRef.current = nextId;
-      if (nextId) appStorage.setItem(selectedKey, nextId);
       setSelectedId(nextId);
       setState(current => ({ ...next, sessions: mergeSessions(current?.sessions, next.sessions), lessonSessions: mergeSessions(current?.lessonSessions, next.lessonSessions) }));
       setHealth(nextHealth);
@@ -64,7 +63,7 @@ export function useStudy(learningData: LearningView | null) {
   const currentModule = allModules.find(item => item.id === exercise?.moduleId);
   useEffect(() => {
     const saved = restoredExerciseRef.current;
-    if (saved && learningData?.exercises.some(item => item.id === saved)) { setSelectedId(saved); selectedIdRef.current = saved; appStorage.setItem(selectedKey, saved); restoredExerciseRef.current = null; }
+    if (saved && learningData?.exercises.some(item => item.id === saved)) { setSelectedId(saved); restoredExerciseRef.current = null; }
   }, [learningData?.exercises]);
   const exerciseCurriculum = learningData?.curricula.find(item => item.lessonIds.includes(exercise?.moduleId || ''));
   const nextModules = exerciseCurriculum ? exerciseCurriculum.lessonIds.map(id => allModules.find(item => item.id === id)).filter((item): item is Module => !!item) : courseModules;
@@ -77,13 +76,13 @@ export function useStudy(learningData: LearningView | null) {
       return lesson?.status !== 'ready' || module.exerciseIds.some(id => state?.progress[id]?.status !== 'completed');
     }) : undefined;
 
-  function select(id: string) {
-    restoredExerciseRef.current = null;
-    selectedIdRef.current = id;
-    setSelectedId(id);
-    appStorage.setItem(selectedKey, id);
-  }
+  useLayoutEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => {
+    if (!exercise) return;
+    appStorage.setItem(selectedKey, exercise.id);
+    if (routedExerciseId) { restoredExerciseRef.current = null; setSelectedId(routedExerciseId); }
+  }, [exercise?.id, routedExerciseId]);
   return { state, setState, health, nativeAvailable, loadError, load, selectedId, selectedIdRef,
-    allModules, catalog, exercise, currentModule, nextExercise, nextLesson, select };
+    allModules, catalog, exercise, currentModule, nextExercise, nextLesson };
 }
 export type Study = ReturnType<typeof useStudy>;

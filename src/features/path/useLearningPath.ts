@@ -6,20 +6,25 @@ import { mergeSessions } from '../../app/session-state';
 import { post, errorText } from '../../lib/api';
 import { useLearning, learningApi, learningError } from '../../useLearning';
 import { useLessonWorkspace } from './useLessonWorkspace';
+import type { Navigation } from '../../app/useNavigation';
+import { lessonPath } from '../../app/routes';
 export type OutgoingLessonMessage = {
   id: string; createdAt: string; request: LessonChatRequest;
   status: 'sending' | 'failed'; error?: string;
 };
 
 const moduleKey = 'ari:selectedModuleId';
-export function useLearningPath(study: Study, learning: ReturnType<typeof useLearning>, onSelectExercise: (id: string) => void, setActionError: (message: string) => void) {
-  const workspace = useLessonWorkspace();
+export function useLearningPath(study: Study, learning: ReturnType<typeof useLearning>, onSelectExercise: (id: string) => void, setActionError: (message: string) => void, navigation: Navigation) {
+  const route = navigation.route;
+  const workspace = useLessonWorkspace(route.tab, tab => {
+    if (route.curriculumId && route.lessonId) navigation.go(lessonPath(route.curriculumId, route.lessonId, tab), true);
+  });
   const { state, setState, allModules, catalog } = study;
-  const [selectedModuleId, setSelectedModuleId] = useState(() => {
+  const [rememberedModuleId, rememberModule] = useState(() => {
     const saved = appStorage.getItem(moduleKey);
     return saved || courseModules[0]?.id || '';
   });
-  const [curriculumId, setCurriculumId] = useState(() => appStorage.getItem('ari:curriculum') || '');
+  const [rememberedCurriculumId, rememberCurriculum] = useState(() => appStorage.getItem('ari:curriculum') || '');
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [ficheRequests, setFicheRequests] = useState<Record<string, { pending: boolean; error?: string }>>({});
   const [lessonDrafts, setLessonDrafts] = useState<Record<string, string>>({});
@@ -27,8 +32,6 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
   const lessonBusyRef = useRef(new Map<string, string>());
   const [generationDifficulty, setGenerationDifficulty] = useState<Difficulty>('stretch');
   const [generationBusy, setGenerationBusy] = useState(false);
-  useEffect(() => { appStorage.setItem(moduleKey, selectedModuleId); }, [selectedModuleId]);
-  useEffect(() => { appStorage.setItem('ari:curriculum', curriculumId); }, [curriculumId]);
   useEffect(() => {
     const acknowledged = new Set((state?.lessonSessions || []).map(session => session.id));
     if (!outgoingLessonMessages.some(item => acknowledged.has(item.id))) return;
@@ -49,11 +52,21 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
     return new Set(allModules.filter(module => (!('status' in module) || module.status === 'ready')
       && (counts.get(module.id) ?? 0) >= 2).map(module => module.id));
   }, [allModules, catalog, state?.progress]);
-  const activeCurriculum = learning.data?.curricula.find(item => item.id === curriculumId) || learning.data?.curricula.find(item => item.source === 'original');
-  const pathModules = activeCurriculum ? allModules.filter(item => activeCurriculum.lessonIds.includes(item.id)) : courseModules;
-  const selectedModule = pathModules.find(item => item.id === selectedModuleId) || pathModules[0];
-  const selectedLesson = learning.data?.lessons.find(item => item.id === selectedModule?.id);
-  useEffect(() => { if (learning.data && selectedModule && selectedModule.id !== selectedModuleId) setSelectedModuleId(selectedModule.id); }, [learning.data, selectedModule, selectedModuleId]);
+  const curriculumId = route.view === 'path' && route.curriculumId ? route.curriculumId : rememberedCurriculumId;
+  const activeCurriculum = learning.data?.curricula.find(item => item.id === curriculumId)
+    || (!route.curriculumId ? learning.data?.curricula.find(item => item.source === 'original') : undefined);
+  const pathModules = activeCurriculum ? activeCurriculum.lessonIds.flatMap(id => allModules.find(item => item.id === id) ?? []) : [];
+  const moduleId = route.view === 'path' && route.lessonId ? route.lessonId : rememberedModuleId;
+  const selectedModule = pathModules.find(item => item.id === moduleId) || (!route.lessonId ? pathModules[0] : undefined);
+  const selectedModuleId = selectedModule?.id || '';
+  const selectedLesson = learning.data?.lessons.find(item => item.id === selectedModuleId);
+  useEffect(() => {
+    if (route.view !== 'path' || !activeCurriculum || !selectedModule || !route.lessonId) return;
+    rememberModule(selectedModule.id); rememberCurriculum(activeCurriculum.id);
+    appStorage.setItem(moduleKey, selectedModule.id);
+    appStorage.setItem('ari:curriculum', activeCurriculum.id);
+    appStorage.setItem('ari:lastLesson:' + activeCurriculum.id, selectedModule.id);
+  }, [route.view, activeCurriculum?.id, selectedModuleId, route.lessonId]);
   const lessonSessions = useMemo(() => (state?.lessonSessions || []).filter(item => item.moduleId === selectedModuleId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [state?.lessonSessions, selectedModuleId]);
   const lessonOutgoing = useMemo(() => outgoingLessonMessages.filter(item => item.request.moduleId === selectedModuleId),
@@ -61,13 +74,10 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
 
   function showLesson(moduleId: string) {
     const owner = learning.data?.curricula.find(item => item.lessonIds.includes(moduleId));
-    if (owner) setCurriculumId(owner.id);
-    setSelectedModuleId(moduleId);
-    workspace.setTab(moduleId, 'lesson');
+    if (owner) navigation.go(lessonPath(owner.id, moduleId));
   }
-  function openCurriculum(id: string) {
-    setCurriculumId(id);
-    setSelectedModuleId(learning.data?.curricula.find(item => item.id === id)?.lessonIds[0] || '');
+  function setSelectedModuleId(moduleId: string) {
+    if (activeCurriculum) navigation.go(lessonPath(activeCurriculum.id, moduleId));
   }
   async function prepareLesson() {
     if (!selectedModule || prepareBusy) return; setPrepareBusy(true); setActionError('');
@@ -137,6 +147,6 @@ export function useLearningPath(study: Study, learning: ReturnType<typeof useLea
   return { workspace, activeCurriculum, completedLessonIds, pathModules, selectedModule, selectedLesson, selectedModuleId, setSelectedModuleId,
     prepareBusy, prepareLesson, ficheRequests, createFiche, dismissFicheError, lessonSessions, lessonOutgoing, lessonDrafts, setLessonDrafts,
     sendLessonMessage, deliverLessonMessage, generationBusy, generationDifficulty, setGenerationDifficulty,
-    generateExercise, showLesson, openCurriculum };
+    generateExercise, showLesson };
 }
 export type LearningPathController = ReturnType<typeof useLearningPath>;

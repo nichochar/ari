@@ -1,6 +1,6 @@
 import { useChatPhotos } from '../../components/photos/useChatPhotos';
 import { photoLimitError } from '../../../shared/photos';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject, Dispatch, SetStateAction } from 'react';
 import type { AppState, Exercise, ExercisePage, ReflectionRequest, ReflectionResponse, Session, TutorRequest } from '../../../shared/types';
 import { MAX_EXERCISE_PAGES } from '../../../shared/types';
@@ -8,6 +8,7 @@ import { api, post, errorText } from '../../lib/api';
 import { createScopedStorage } from '../../storage';
 import { mergeSessions } from '../../app/session-state';
 import { useCamera } from '../../useCamera';
+import { useDeskDraft } from './useDeskDraft';
 type TutorMode = 'chat' | 'check';
 type OutgoingMessage = {
   id: string; createdAt: string; request: TutorRequest;
@@ -30,26 +31,22 @@ type DeskOptions = {
 };
 export function useDesk({ active, state, setState, exercise, selectedId, selectedIdRef, nativeAvailable, onIdle, setActionError }: DeskOptions) {
   const photos = useChatPhotos('exercise:' + selectedId);
-  const [draft, setDraft] = useState('');
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [uploadName, setUploadName] = useState('');
+  const { draft, setDraft, uploadedImage, setUploadedImage, uploadName, setUploadName,
+    confidence, setConfidence, reflectionNotes, setReflectionNotes, sendError, setSendError, reflectionError, setReflectionError } = useDeskDraft(selectedId);
+  const initializedReflections = useRef(new Set<string>());
   const [sendMode, setSendMode] = useState<TutorMode | null>(null);
   const sendBusyRef = useRef(false);
   const gradeCaptureRef = useRef<AbortController | null>(null);
   const uploadReadRef = useRef(0);
   const [preparingGrade, setPreparingGrade] = useState(false);
-  const [sendError, setSendError] = useState('');
   const pageBusyRef = useRef(false);
   const [pageBusy, setPageBusy] = useState<'add' | string | null>(null);
   const [pageErrors, setPageErrors] = useState<Record<string, string>>({});
   const [unsavedPages, setUnsavedPages] = useState<Record<string, UnsavedPage[]>>({});
   const [outgoingMessages, setOutgoingMessages] = useState<OutgoingMessage[]>([]);
-  const [confidence, setConfidence] = useState<number | null>(null);
-  const [reflectionNotes, setReflectionNotes] = useState('');
   const [reflectionBusy, setReflectionBusy] = useState(false);
   const reflectionBusyRef = useRef(false);
   const [pendingReflections] = useState(() => createScopedStorage(() => window.sessionStorage, window.location.search));
-  const [reflectionError, setReflectionError] = useState('');
   const [cameraExpanded, setCameraExpanded] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeCameraRef = useRef<HTMLButtonElement>(null);
@@ -60,6 +57,7 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   useEffect(() => {
     if (!active) {
       gradeCaptureRef.current?.abort();
+      uploadReadRef.current++;
       camera.stop();
       setCameraExpanded(false);
     }
@@ -95,7 +93,8 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     if (pane && shouldFollowConversation.current) pane.scrollTop = pane.scrollHeight;
   }, [conversation, selectedId, active]);
   useEffect(() => {
-    if (!reflectionReady) return;
+    if (!reflectionReady || initializedReflections.current.has(selectedId)) return;
+    initializedReflections.current.add(selectedId);
     const pending = readPendingReflection(pendingReflections, selectedId);
     if (pending && !state.reflections.some(item => item.id === pending.id)) {
       setConfidence(pending.confidence);
@@ -114,13 +113,10 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
   function resetForExercise() {
     cancelCapture();
     invalidateUpload();
-    setDraft('');
-    setUploadedImage(null);
-    setUploadName('');
-    setSendError('');
     setCameraExpanded(false);
     shouldFollowConversation.current = true;
   }
+  useLayoutEffect(resetForExercise, [selectedId]);
   async function addPage(retryId?: string) {
     if (!exercise || pageBusyRef.current || sendBusyRef.current || reflectionBusyRef.current) return;
     const exerciseId = exercise.id;
@@ -329,6 +325,6 @@ export function useDesk({ active, state, setState, exercise, selectedId, selecte
     confidence, setConfidence, reflectionNotes, setReflectionNotes, reflectionBusy, reflectionError, latestReflection,
     cameraExpanded, setCameraExpanded, expandButtonRef, closeCameraRef, conversationRef, composerRef,
     shouldFollowConversation, camera, pageAttachedToPendingMessage, addPage, removePage,
-    send, deliverMessage, onUpload, saveReflection, cancelCapture, invalidateUpload, resetForExercise };
+    send, deliverMessage, onUpload, saveReflection };
 }
 export type DeskController = ReturnType<typeof useDesk>;

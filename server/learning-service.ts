@@ -218,7 +218,7 @@ ${ficheInstructions}`, { lesson }, jsonSchema(schema)));
   async syncProfile(patch: Partial<Profile>) {
     const keys = Object.keys(patch) as (keyof Profile)[];
     if (!keys.length) return;
-    const labels: Record<keyof Profile, string> = { name: 'Name', language: 'Preferred language', goal: 'Goal', sessionMinutes: 'Preferred session length', sessionsPerWeek: 'Sessions per week' };
+    const labels: Record<keyof Profile, string> = { name: 'Name', language: 'Preferred language', goal: 'Goal', sessionMinutes: 'Preferred session length' };
     for (let attempt = 0; attempt < 3; attempt++) {
       const current = await this.workspace.read('USER.md');
       const { profile } = await this.store.read();

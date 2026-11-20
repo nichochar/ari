@@ -13,7 +13,7 @@ const bounded = (max: number) => z.string().trim().max(max);
 export const profileSchema = z.object({
   name: bounded(100), language: z.enum(['en', 'fr']),
   sessionMinutes: z.number().int().min(10).max(180),
-  sessionsPerWeek: z.number().int().min(1).max(7), goal: bounded(1000),
+  goal: bounded(1000),
 }).strict();
 export const progressSchema = z.object({
   exerciseId: bounded(120).min(1), status: z.enum(['started', 'completed']),

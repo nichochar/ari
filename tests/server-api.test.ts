@@ -749,7 +749,7 @@ test('lesson conversation receives the actual lesson, remembers turns after rest
     assert.equal(seen[0].payload.lesson.summary, module.summary);
     assert.deepEqual(seen[0].payload.lesson.objectives, module.objectives);
     assert.deepEqual(seen[0].payload.lesson.prerequisites, module.prerequisites);
-    assert.deepEqual(seen[0].payload.profile, { language: before.profile.language, sessionMinutes: before.profile.sessionMinutes, sessionsPerWeek: before.profile.sessionsPerWeek });
+    assert.deepEqual(seen[0].payload.profile, { language: before.profile.language, sessionMinutes: before.profile.sessionMinutes });
     assert.deepEqual(seen[0].payload.history, []);
     assert.equal(seen[0].payload.exercise, undefined);
     assert.equal(JSON.stringify(seen[0].payload).includes('rubric'), false);

@@ -13,7 +13,7 @@ export interface Exercise {
   generated?: boolean;
 }
 export interface Profile {
-  name: string; language: Language; sessionMinutes: number; sessionsPerWeek: number; goal: string;
+  name: string; language: Language; sessionMinutes: number; goal: string;
 }
 export interface Progress {
   exerciseId: string; status: 'started' | 'completed'; confidence: number;

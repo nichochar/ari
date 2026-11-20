@@ -178,7 +178,18 @@ export class PersonalizationWorkspace {
       writeFileSync(markerPath, JSON.stringify({ workspaceId: metadata.workspaceId }) + '\n', { mode: 0o600, flag: 'wx' });
       this.store.savePersonalizationMetadata(metadata);
     }
-    if (metadata!.migrated) return;
+    if (metadata!.migrated) {
+      const user = this.observe('USER.md');
+      if (user) {
+        const content = user.content.replace(/^- Sessions per week:[^\r\n]*(?:\r?\n|$)/gm, '')
+          .replace(/^(- Saved study pace: \d+ minutes per session), \d+ sessions per week(?=[;.\r\n]|$)/gm, '$1');
+        if (content !== user.content) {
+          this.replace('USER.md', content, user.hash);
+          this.record('USER.md', content, 'migration', 'Removed the retired weekly study frequency preference.');
+        }
+      }
+      return;
+    }
     const [state, learning] = await Promise.all([this.store.read(), this.store.readLearning()]);
     const defaults = defaultState();
     const initialMemory = defaultLearning(state, learning.learnerId).memory.content;
@@ -205,7 +216,7 @@ export class PersonalizationWorkspace {
     seed('TUTOR.md', tutorTemplate);
     const importedMemoryPath = imported ? seed('memories/imported/learner-notes.md', learning.memory.content) : null;
     const importedPointer = importedMemoryPath ? `\n## Earlier learning notes\n\nEarlier learner notes are preserved in \`${importedMemoryPath}\`. Read that file only when relevant. These older observations may be outdated; current learner corrections and confirmed preferences take precedence.\n` : '';
-    seed('USER.md', `# About the learner\n\nThe following preferences were explicitly saved in profile settings. Update them as your goals change.\n\n- Name: ${state.profile.name}\n- Preferred language: ${state.profile.language}\n- Goal: ${state.profile.goal}\n- Preferred session length: ${state.profile.sessionMinutes} minutes\n- Sessions per week: ${state.profile.sessionsPerWeek}\n\n## Starting point\n\nAsk the learner; establish knowledge from learning evidence.\n${importedPointer}`);
+    seed('USER.md', `# About the learner\n\nThe following preferences were explicitly saved in profile settings. Update them as your goals change.\n\n- Name: ${state.profile.name}\n- Preferred language: ${state.profile.language}\n- Goal: ${state.profile.goal}\n- Preferred session length: ${state.profile.sessionMinutes} minutes\n\n## Starting point\n\nAsk the learner; establish knowledge from learning evidence.\n${importedPointer}`);
     const user = this.required('USER.md');
     if (importedMemoryPath && !user.content.includes(importedMemoryPath)) {
       const content = user.content + importedPointer;

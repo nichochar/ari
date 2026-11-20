@@ -16,7 +16,7 @@ import { repairLessonOrigins } from './learning-repairs.js';
 import { modelSelectionSchema } from './model-settings-schema.js';
 import type { ModelSelection } from '../shared/model-settings.js';
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 export const ORIGINAL_CURRICULUM_ID = 'original-prepa';
 
 export interface LessonRevision { lesson: LearningLesson; exercises: Exercise[]; savedAt: string; }
@@ -41,14 +41,14 @@ export function defaultLearning(state: AppState, learnerId = 'local'): LearningD
     // pipeline starts with new work rather than generating an unsolicited backlog.
     reviewedEvidenceIds: state.reflections.map(reflection => reflection.id),
     memory: {
-      content: `# Learner profile\n\nName: ${state.profile.name}\nPreferred language: ${state.profile.language}\nGoal: ${state.profile.goal}\nPreferred session length: ${state.profile.sessionMinutes} minutes\nSessions per week: ${state.profile.sessionsPerWeek}\n\nThese are saved profile settings. Knowledge and mastery should be established from learning evidence.`,
+      content: `# Learner profile\n\nName: ${state.profile.name}\nPreferred language: ${state.profile.language}\nGoal: ${state.profile.goal}\nPreferred session length: ${state.profile.sessionMinutes} minutes\n\nThese are saved profile settings. Knowledge and mastery should be established from learning evidence.`,
       revision: 1, updatedAt: now, updatedBy: 'user',
     },
   };
 }
 
 export const defaultState = (): AppState => ({
-  profile: { name: 'Learner', language: 'en', sessionMinutes: 25, sessionsPerWeek: 4, goal: 'Explore a subject and develop lasting understanding.' },
+  profile: { name: 'Learner', language: 'en', sessionMinutes: 25, goal: 'Explore a subject and develop lasting understanding.' },
   progress: {}, sessions: [], generatedExercises: [], plan: null,
   reflections: [], dailyReviews: [], exercisePages: [], lessonSessions: [],
 });
@@ -97,7 +97,7 @@ export class StateStore {
       if (tables.length) {
         if (!tables.some(row => row.name === 'metadata')) throw new Error('Unrecognized state database schema.');
         const version = this.db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value?: string } | undefined;
-        if (!['1', '2', '3', String(SCHEMA_VERSION)].includes(version?.value ?? '')) {
+        if (!['1', '2', '3', '4', String(SCHEMA_VERSION)].includes(version?.value ?? '')) {
           throw new Error(`Unsupported state database schema version: ${version?.value ?? 'missing'}.`);
         }
         if (version?.value === '1') {
@@ -107,6 +107,9 @@ export class StateStore {
           this.db.exec('CREATE TABLE lesson_sessions (id TEXT PRIMARY KEY, ordinal INTEGER NOT NULL, payload TEXT NOT NULL)');
         }
         if (!this.db.prepare('SELECT 1 FROM profile WHERE id = 1').get()) throw new Error('State database is missing its profile.');
+        if (version?.value !== String(SCHEMA_VERSION)) {
+          this.db.exec("UPDATE profile SET payload = json_remove(payload, '$.sessionsPerWeek') WHERE json_type(payload, '$.sessionsPerWeek') IS NOT NULL");
+        }
         this.initializeLearning();
         this.db.prepare("UPDATE metadata SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
         return;
@@ -121,7 +124,11 @@ export class StateStore {
           throw new Error(`Cannot parse legacy state at ${legacyPath}. Original left untouched.`, { cause: error });
         }
         if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) throw new Error('Legacy state must be an object. Original left untouched.');
-        const normalized = { ...legacy, reflections: (legacy as Record<string, unknown>).reflections ?? [], dailyReviews: (legacy as Record<string, unknown>).dailyReviews ?? [], exercisePages: (legacy as Record<string, unknown>).exercisePages ?? [] };
+        const normalized: Record<string, unknown> = { ...legacy, reflections: (legacy as Record<string, unknown>).reflections ?? [], dailyReviews: (legacy as Record<string, unknown>).dailyReviews ?? [], exercisePages: (legacy as Record<string, unknown>).exercisePages ?? [] };
+        if (normalized.profile && typeof normalized.profile === 'object' && !Array.isArray(normalized.profile)) {
+          const { sessionsPerWeek: _retired, ...profile } = normalized.profile as Record<string, unknown>;
+          normalized.profile = profile;
+        }
         try {
           initial = stateSchema.parse(normalized) as AppState;
         } catch (error) {

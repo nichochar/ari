@@ -37,7 +37,7 @@ function filledState(): AppState {
 test('migrates every legacy record once and preserves both source and backup', async () => {
   const { dbPath, legacyPath } = fixture();
   const original = filledState();
-  const raw = JSON.stringify(original, null, 2);
+  const raw = JSON.stringify({ ...original, profile: { ...original.profile, sessionsPerWeek: 4 } }, null, 2);
   writeFileSync(legacyPath, raw);
   const store = new StateStore(dbPath, { legacyPath });
   assert.deepEqual(await store.read(), original);
@@ -99,7 +99,7 @@ test('upgrades a version-one database in place and keeps legacy journal photos',
   assert.deepEqual(upgraded.getSnapshot(photoId), { data: png, mimeType: 'image/png' });
   upgraded.close();
   const db = new DatabaseSync(dbPath);
-  assert.equal((db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value: string }).value, '4');
+  assert.equal((db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value: string }).value, '5');
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM exercise_pages').get() as { count: number }).count, 0);
   db.close();
 });
@@ -140,12 +140,35 @@ test('reopens committed state and preserves updates from two connections', async
   await first.update(state => { state.profile.name = 'Alex'; state.profile.sessionMinutes = 30; });
   await second.update(state => { state.profile.goal = 'Rebuild calculus'; });
   assert.equal((await first.read()).profile.goal, 'Rebuild calculus');
-  await first.update(state => { state.profile.sessionsPerWeek = 5; });
+  await first.update(state => { state.profile.language = 'fr'; });
   first.close();
   second.close();
   const reopened = new StateStore(dbPath);
-  assert.deepEqual((await reopened.read()).profile, { name: 'Alex', language: 'en', sessionMinutes: 30, sessionsPerWeek: 5, goal: 'Rebuild calculus' });
+  assert.deepEqual((await reopened.read()).profile, { name: 'Alex', language: 'fr', sessionMinutes: 30, goal: 'Rebuild calculus' });
   reopened.close();
+});
+
+test('retires weekly frequency from existing profiles without changing learning records', async () => {
+  const { dbPath } = fixture();
+  const store = new StateStore(dbPath);
+  await store.update(state => Object.assign(state, filledState()));
+  const before = await store.read();
+  store.close();
+  const old = new DatabaseSync(dbPath);
+  old.prepare('UPDATE profile SET payload = ? WHERE id = 1').run(JSON.stringify({ ...before.profile, sessionsPerWeek: 4 }));
+  old.exec("UPDATE metadata SET value = '4' WHERE key = 'schema_version'");
+  const tables = (old.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('profile', 'metadata')").all() as { name: string }[]).map(row => row.name);
+  const rows = tables.map(table => old.prepare(`SELECT * FROM ${table}`).all());
+  old.close();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const reopened = new StateStore(dbPath);
+    assert.deepEqual(await reopened.read(), before);
+    reopened.close();
+  }
+  const migrated = new DatabaseSync(dbPath);
+  assert.deepEqual(JSON.parse((migrated.prepare('SELECT payload FROM profile').get() as { payload: string }).payload), before.profile);
+  tables.forEach((table, index) => assert.deepEqual(migrated.prepare(`SELECT * FROM ${table}`).all(), rows[index], table));
+  migrated.close();
 });
 
 test('profile updates leave unchanged entity rows alone and new database is private', async () => {
@@ -231,7 +254,7 @@ for (const version of ['1', '2']) {
     const migrated = new DatabaseSync(dbPath);
     for (const table of tables.filter(table => table !== 'profile'))
       assert.deepEqual(migrated.prepare(`SELECT * FROM ${table}`).all(), rows[table], table);
-    assert.equal((migrated.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value: string }).value, '4');
+    assert.equal((migrated.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value: string }).value, '5');
     assert.equal((migrated.prepare('SELECT COUNT(*) AS count FROM lesson_sessions').get() as { count: number }).count, 0);
     assert.equal(JSON.parse((migrated.prepare('SELECT payload FROM daily_reviews').get() as { payload: string }).payload).evidenceLessonSessionIds, undefined);
     migrated.close();

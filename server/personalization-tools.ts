@@ -4,7 +4,7 @@ import { PersonalizationWorkspace } from './personalization.js';
 import type { Profile } from '../shared/types.js';
 
 /** Identity and learning goals live in USER.md; these remain desk defaults. */
-export const profileDefaults = ({ language, sessionMinutes, sessionsPerWeek }: Profile) => ({ language, sessionMinutes, sessionsPerWeek });
+export const profileDefaults = ({ language, sessionMinutes }: Profile) => ({ language, sessionMinutes });
 
 const path = z.string().min(1).max(300);
 const hash = z.string().max(128).nullable();

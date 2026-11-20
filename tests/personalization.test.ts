@@ -94,6 +94,20 @@ test('migration preserves learning records, verbatim memory, evidence IDs/dates 
   assert.deepEqual(reopened, view);
 });
 
+test('retired weekly preferences leave current learner notes while preserving revision history', async () => {
+  const { workspace, rootPath, store } = fixture();
+  const initial = await workspace.read('USER.md');
+  const content = '# Learner\n\n- Saved study pace: 30 minutes per session, 3 sessions per week; treat this as a preference, not an obligation.\n- Sessions per week: 3\n- Goal: Learn geometry.\n\nKeep my examples.\n';
+  const previous = await workspace.write('USER.md', content, { expectedHash: initial.hash, actor: 'user' });
+  const next = new PersonalizationWorkspace(store, rootPath);
+  const updated = await next.read('USER.md');
+  assert.equal(updated.content, content.replace(', 3 sessions per week', '').replace('- Sessions per week: 3\n', ''));
+  assert.equal(updated.actor, 'migration');
+  assert.equal(updated.revision, previous.revision + 1);
+  assert.equal(store.readPersonalizationRevisions('USER.md', 0, 2)[1].content, content);
+  assert.deepEqual(await new PersonalizationWorkspace(store, rootPath).read('USER.md'), updated);
+});
+
 test('direct disk edits and deletions become historical revisions and stale updates fail', async () => {
   const { workspace, rootPath } = fixture();
   const original = await workspace.read('USER.md');

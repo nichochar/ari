@@ -61,7 +61,7 @@ test('bundled primer expansion retains history and work, skips personalized prim
   again.close();
 });
 
-test('v4 migration preserves every old row and photo byte, seeding actual profile and stable course IDs', async () => {
+test('learning migration preserves every old row and photo byte, seeding actual profile and stable course IDs', async () => {
   const path = fixture();
   const first = new StateStore(path);
   let photo = '';
@@ -101,7 +101,7 @@ test('v4 migration preserves every old row and photo byte, seeding actual profil
   migrated.close();
   const db = new DatabaseSync(path);
   for (const table of tables) assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows[table], table);
-  assert.equal(db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()?.value, '4');
+  assert.equal(db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()?.value, '5');
   db.close();
 });
 

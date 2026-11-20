@@ -19,10 +19,8 @@ export function Settings({ settings, learning, memoryRevision, discuss, actionEr
   return <section className="page">
     <PageHeader title="Settings" description="Shape your tutor, goals and study pace." />
     <Card className="settings-form">
-      <div className="two-fields"><label>Minutes per session<Input type="number" min="10" max="180"
+      <label>Minutes per session<Input type="number" min="10" max="180"
         value={profileDraft.sessionMinutes} onChange={event => setProfileDraft({ ...profileDraft, sessionMinutes: Number(event.target.value) })} /></label>
-        <label>Sessions each week<Input type="number" min="1" max="7" value={profileDraft.sessionsPerWeek}
-          onChange={event => setProfileDraft({ ...profileDraft, sessionsPerWeek: Number(event.target.value) })} /></label></div>
       <div className="form-field"><label htmlFor="tutor-language">Tutor language</label><Select id="tutor-language" value={profileDraft.language}
         onValueChange={value => setProfileDraft({ ...profileDraft, language: value as Profile['language'] })}
         options={[{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }]} /></div>

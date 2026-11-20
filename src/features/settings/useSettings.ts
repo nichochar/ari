@@ -16,7 +16,6 @@ export function useSettings(state: AppState | null, setState: Dispatch<SetStateA
     try {
       const profile = await post<Profile>('/api/profile', {
         sessionMinutes: profileDraft.sessionMinutes,
-        sessionsPerWeek: profileDraft.sessionsPerWeek,
         language: profileDraft.language,
       }, 'PATCH');
       setState(current => current ? { ...current, profile } : current);

@@ -14,7 +14,7 @@ export function createPersonalizedAsk(base: AIAsk | undefined, tutor: LearningAg
   if (!base) return undefined;
   let active = 0;
   return async (task, instructions, payload, image) => {
-    const currentInstructions = async () => `${instructions}\n\n${await personalizationInstructions(workspace)}`;
+    const currentInstructions = async () => `${instructions}\n\n${await personalizationInstructions(workspace, { tools: task === 'tutor' && !!tutor })}`;
     if (task !== 'tutor' || !tutor) return base(task, await currentInstructions(), payload, image);
     const lessonId = store ? lessonContext.safeParse(payload).data?.lesson.id : undefined;
     if (active >= 2) throw new Error('AI_BUSY');

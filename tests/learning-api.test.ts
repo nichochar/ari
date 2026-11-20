@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { preparationInstructions } from '../server/lesson-preparation.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -257,7 +258,7 @@ test('tool retries replay accepted side effects and missing evidence returns too
 
 test('preparation uses proposal-selected materials and never unrelated uploaded notes', async () => {
   let selected = ''; let prepPayload: unknown; const base = fixtureLearningProvider();
-  const fx = await fixture({ ...base, run: r => toolReply(r, 'propose_learning', { ...historyProposal, materialIds: [selected] }), generate: async <T>(instruction: string, payload: unknown, schema: Record<string, unknown>) => { if (instruction.startsWith('Prepare')) prepPayload = payload; return base.generate<T>(instruction, payload, schema); } });
+  const fx = await fixture({ ...base, run: r => toolReply(r, 'propose_learning', { ...historyProposal, materialIds: [selected] }), generate: async <T>(instruction: string, payload: unknown, schema: Record<string, unknown>) => { if (instruction.startsWith(preparationInstructions)) prepPayload = payload; return base.generate<T>(instruction, payload, schema); } });
   try { const source = await (await fx.request('/api/learning/materials', 'POST', { title: 'Relevant source', kind: 'note', text: 'A mayor claims a park helps health.' })).json(); selected = source.id;
     await fx.request('/api/learning/materials', 'POST', { title: 'Private unrelated interest', kind: 'note', text: 'A completely different personal topic.' });
     const view = await (await fx.request('/api/learning')).json(); assert.equal(view.materials[0].text, undefined); assert.equal((await fx.request(`/api/learning/materials/${selected}/source`)).status, 200);
@@ -269,7 +270,7 @@ test('preparation uses proposal-selected materials and never unrelated uploaded 
 test('preparing later lessons uses current curriculum evidence; accepted enrichment versions content without changing old work', async () => {
   let expand = false, curriculumId = '', lessonId = '', prepPayload: unknown; const base = fixtureLearningProvider();
   const fx = await fixture({ ...base, run: request => toolReply(request, 'propose_learning', expand ? { ...historyProposal, kind: 'expand', targetCurriculumId: curriculumId, targetLessonId: lessonId, expansion: 'enrich', lessons: [historyProposal.lessons[0]] } : historyProposal, randomUUID()),
-    generate: async <T>(instructions: string, payload: unknown, schema: Record<string, unknown>) => { if (instructions.startsWith('Prepare')) prepPayload = payload; return base.generate<T>(instructions, payload, schema); } });
+    generate: async <T>(instructions: string, payload: unknown, schema: Record<string, unknown>) => { if (instructions.startsWith(preparationInstructions)) prepPayload = payload; return base.generate<T>(instructions, payload, schema); } });
   try { await chat(fx, 'History path'); await fx.settle(); let d = await fx.store().readLearning(); let p = d.proposals[0]; await fx.request(`/api/learning/proposals/${p.id}/accept`, 'POST', { revision: p.revision }); await fx.settle();
     d = await fx.store().readLearning(); curriculumId = d.proposals[0].curriculumId!; const c = d.curricula.find(c => c.id === curriculumId)!; lessonId = c.lessonIds[0]; const first = d.lessons.find(l => l.id === lessonId)!;
     const oldExercises = structuredClone(d.exercises.filter(e => e.moduleId === lessonId)); const oldLesson = structuredClone(first);
@@ -310,7 +311,7 @@ test('failed background analysis retries at an explicit idle boundary without du
 
 test('current preferences override seeded notes and preparation receives the requested language', async () => {
   let mainInstructions = '', payload: unknown, prepInstructions = ''; const base = fixtureLearningProvider();
-  const fx = await fixture({ ...base, run: request => { mainInstructions = request.instructions; return toolReply(request, 'propose_learning', historyProposal); }, generate: async <T>(instructions: string, value: unknown, schema: Record<string, unknown>) => { if (instructions.startsWith('Prepare')) { payload = value; prepInstructions = instructions; } return base.generate<T>(instructions, value, schema); } });
+  const fx = await fixture({ ...base, run: request => { mainInstructions = request.instructions; return toolReply(request, 'propose_learning', historyProposal); }, generate: async <T>(instructions: string, value: unknown, schema: Record<string, unknown>) => { if (instructions.startsWith(preparationInstructions)) { payload = value; prepInstructions = instructions; } return base.generate<T>(instructions, value, schema); } });
   try { await fx.request('/api/profile','PATCH',{ language:'fr',goal:'Read historical sources in French.' }); await chat(fx,'A French history course'); await fx.settle(); assert.match(mainInstructions,/"language":"fr"/); assert.match(mainInstructions,/take precedence/);
     const p = (await fx.store().readLearning()).proposals[0]; await fx.request(`/api/learning/proposals/${p.id}/accept`,'POST',{revision:p.revision});await fx.settle();assert.match(prepInstructions,/profile.language/);assert.equal((payload as {profile:{language:string}}).profile.language,'fr');
   } finally { await fx.close(); }
@@ -386,6 +387,12 @@ test('independent lesson rejection feeds its precise reason into one revision an
     assert.equal(lesson.status, 'ready'); assert.equal(lesson.primer, corrected.primer); assert.equal(drafts, 2); assert.equal(verifications, 2);
     assert.deepEqual(repairedPayload.revision.feedback, [reason]); assert.deepEqual(repairedPayload.revision.priorDraft, preparedLesson);
     assert.equal(verified[1].prepared.primer, corrected.primer); assert.equal(data.runs.filter(r => r.kind === 'prepare').length, 1);
+    for (const prompt of preparationPrompts) {
+      assert.match(prompt, /^You are Ari/);
+      assert.ok(prompt.indexOf('# Lesson') < prompt.indexOf('# Learner context'));
+      assert.match(prompt, /No Ari workspace or history tools are available/);
+      assert.doesNotMatch(prompt, /retrieve other notes selectively with workspace tools/);
+    }
     assert.ok(preparationPrompts.every(prompt => prompt.includes('Common introductory knowledge may be taught without citations') && prompt.includes('uncertain, specialized or current claims require appropriate grounding')));
     assert.ok(verificationPrompts.every(prompt => prompt.includes('do not reject common introductory knowledge solely because no sources were supplied')));
     assert.ok(preparationPrompts.every(prompt => prompt.includes('Graded exercises must be assessable from written answers, notation or a photo of written work') && prompt.includes('never award rubric points for unobservable performance')));
@@ -439,7 +446,7 @@ test('extensions continue phase numbering and deferred lessons retain their own 
     run: request => toolReply(request, 'propose_learning', { ...historyProposal, kind: 'expand', expansion: 'followup',
       targetCurriculumId: 'original-prepa', description, materialIds: [materialId] }),
     generate: async <T>(instructions: string, payload: unknown, schema: Record<string, unknown>) => {
-      if (instructions.startsWith('Prepare')) preparations.push(payload);
+      if (instructions.startsWith(preparationInstructions)) preparations.push(payload);
       if (instructions.startsWith('Independently')) verifications.push(payload);
       return base.generate<T>(instructions, payload, schema);
     },

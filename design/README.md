@@ -83,6 +83,8 @@ DM Sans and Newsreader are self-hosted in `public/fonts/` and loaded through `sr
 
 Utility cards use one descriptive heading in Newsreader, without a second label repeating its purpose. An eyebrow is useful for distinct metadata, such as a lesson's phase or subject. Related steps share a card, with a simple internal divider when needed: reflection and next-exercise actions belong together.
 
+Markdown quotes share one style across chats and lessons: a faint 2px `--ari-border` line, 12px of inset, and no outer horizontal margin. Keep normal text colour and typography, without a separate background. Trim the first and last content margins so quotes sit comfortably inside bubbles.
+
 ## Buttons
 
 Use the shared `Button` variants in `src/components/ui/button.tsx`; visual states belong in `src/components/ui.css`, not page-specific overrides. `outline` and `secondary` are distinct styles:
@@ -94,6 +96,10 @@ Use the shared `Button` variants in `src/components/ui/button.tsx`; visual state
 
 Keep teal for keyboard focus rather than button hover borders.
 
+## Sidebar
+
+Keep navigation icons, unread dots and the collapse control anchored to the same left inset in both states. Never center them inside a changing width. The collapsed brand mark also stays at a fixed left inset. The sidebar width transitions over 200ms with `--ari-ease-in-out`, matching the lesson panes; this layout transition lets the main content reclaim space continuously. Navigation rows must shrink with their grid track; clip only the labels, preserving icon and keyboard-focus visibility. Labels stay mounted, fade out quickly on collapse and fade in after the opening has begun, so neither text nor selected backgrounds spill beyond the growing sidebar. CSS transitions allow immediate reversal. Keyboard toggles, reduced motion and mobile breakpoint changes are instant.
+
 ## Lesson workspace
 
 Learning path has an overview of curricula and a lesson list for each curriculum. In the lesson workspace, the curriculum name uses the shared PageHeader in the same position as the other pages; long titles truncate with a shared Tooltip. All curricula links to the overview. One Lesson Select sits below the title, beside an All lessons link. The lesson title is a content heading, never a disguised picker. Keep phase/status and completion marks in the lesson menu and overview. Lesson, Fiche and Exercises use the shared Base UI Tabs. Keep the workspace's bottom gutter at 8px. Further reading is not a separate section; retain relevant source citations in the lesson.
@@ -104,7 +110,7 @@ Chat toggles beside the content using the shared Resizable components, following
 
 The divider is a 1px line; hover and active dragging share the same slightly darker gray, without thickening it. Keep a clear keyboard-focus indicator when not dragging. The resize library provides a wider invisible pointer target. Its native collapse behavior updates the same state as the toolbar icon toggle, preserving the last expanded width. Chat has no repeated header or close control. Following [Emil Kowalski's animation guidance](https://github.com/emilkowalski/skills/blob/main/skills/animate/SKILL.md), keep toggles brief, reversible and reduced-motion aware. Both pane widths transition together over 200ms with `--ari-ease-in-out`; this is an intentional layout-animation exception so the lesson expands continuously as chat closes. Keep closing content mounted until the transition finishes. Never animate dragging, initial layout or responsive breakpoint changes. Internal seams remain square; only the outside of the workspace has rounded corners.
 
-Fiches can expand through the shared Dialog. Use a brief, subtle paper-like tilt on entry, with no animation for reduced motion. Keep the same Markdown content in the tab and expanded view, without artificial pagination.
+Fiches can expand through the shared Dialog. Use a brief, subtle paper-like tilt on entry, with no animation for reduced motion. Keep the same Markdown content in the tab and expanded view, without artificial pagination. Only the reading tab or expanded body owns vertical scrolling; fiche Markdown flows naturally, with horizontal scrolling confined to wide equations, tables and code blocks.
 
 ## Confidence ratings
 

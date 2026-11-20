@@ -29,7 +29,7 @@ export function AppShell({ navigation, learnerName, completed, unreadCount, chil
         {(['desk', 'chat', 'path', 'assessments', 'journal', 'settings'] as View[]).map(item =>
           <AppLink to={sectionHref(item)} variant="plain" key={item} title={labels[item]} aria-label={labels[item] + ((item === 'chat' || item === 'path') && unreadCount ? ', unread message' : '')} aria-current={route.found && view === item ? 'page' : undefined}
             className={'nav-item ' + (route.found && view === item ? 'active' : '')}>
-            {navIcon(item)}<span>{labels[item]}</span>{(item === 'chat' || item === 'path') && !!unreadCount && <><i className="unread-dot" aria-hidden="true" /><span className="sr-only">Unread message</span></>}
+            {navIcon(item)}<span className="nav-label" aria-hidden="true">{labels[item]}</span>{(item === 'chat' || item === 'path') && !!unreadCount && <><i className="unread-dot" aria-hidden="true" /><span className="sr-only">Unread message</span></>}
           </AppLink>,
         )}
       </nav>

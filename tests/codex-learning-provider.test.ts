@@ -459,6 +459,13 @@ test('structured generation removes unsupported URI formats while retaining sche
   const c = new FakeCodex(); const p = provider(c); c.actions.push(c.answer('{"url":"https://example.com"}'));
   await p.generate('Prepare sources.', {}, { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object',
     properties: { url: { type: 'string', format: 'uri', maxLength: 500 }, date: { type: 'string', format: 'date' } } });
+  const thread = c.calls.find(v => v.method === 'thread/start')!.params;
+  assert.match(thread.baseInstructions, /^Prepare sources\./);
+  assert.match(thread.baseInstructions, /Do not inspect local files, execute commands, modify the computer or invoke external app tools/);
+  assert.doesNotMatch(thread.baseInstructions, /You are Ari|Ari workspace tools/);
+  assert.deepEqual(thread.dynamicTools, []);
+  assert.equal(thread.ephemeral, true);
+  assert.equal(thread.config.mcp_servers.ari_workspace.enabled, false);
   const schema = c.calls.find(v => v.method === 'turn/start')!.params.outputSchema;
   assert.equal(schema.$schema, undefined); assert.equal(schema.properties.url.format, undefined);
   assert.equal(schema.properties.url.maxLength, 500); assert.equal(schema.properties.date.format, 'date');

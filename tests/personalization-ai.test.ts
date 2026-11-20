@@ -100,7 +100,15 @@ test('generation, verification and review preserve their configured task runner 
     const payload = { scope: 'Synthetic task' };
     const image = 'data:image/png;base64,iVBORw0KGgo=';
     for (const task of ['generate', 'verify', 'review'] as const) assert.deepEqual(await ask(task, 'Original task rules', payload, image), { configuredTask: task });
-    for (const call of seen) { assert.match(call.instructions, /^Original task rules/); assert.match(call.instructions, /<TUTOR.md>/); assert.equal(call.payload, payload); assert.equal(call.image, image); }
+    const { tutor: initialTutor, user: initialUser } = await fx.workspace.context();
+    for (const call of seen) {
+      assert.match(call.instructions, /^Original task rules/);
+      assert.ok(call.instructions.includes(`<TUTOR.md>\n${initialTutor}\n</TUTOR.md>`));
+      assert.ok(call.instructions.includes(`<USER.md>\n${initialUser}\n</USER.md>`));
+      assert.match(call.instructions, /No Ari workspace or history tools are available/);
+      assert.doesNotMatch(call.instructions, /retrieve other notes selectively with workspace tools/);
+      assert.equal(call.payload, payload); assert.equal(call.image, image);
+    }
     const tutor = await fx.workspace.read('TUTOR.md');
     await fx.workspace.write('TUTOR.md', '# Tutor\nAsk for a prediction first.', { expectedHash: tutor.hash, actor: 'user' });
     await ask('verify', 'Verify original scope', payload);

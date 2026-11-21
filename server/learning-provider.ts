@@ -61,7 +61,7 @@ const estimateValue = (value: unknown): number => {
   if (value && typeof value === 'object') return Object.entries(value).reduce((sum, [key, child]) => sum + (key === 'encrypted_content' ? 0 : estimateValue(child)) + 4, 0);
   return 1;
 };
-const estimateTokens = (context: unknown[]) => estimateValue(context);
+export const estimateTokens = (context: unknown[]) => estimateValue(context);
 export const learningCompactionThreshold = () => {
   const value = Number(process.env.LEARNING_COMPACTION_TOKENS ?? 64000);
   return Number.isFinite(value) && value >= 2000 && value <= 200000 ? Math.floor(value) : 64000;

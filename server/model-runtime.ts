@@ -3,6 +3,7 @@ import type { StateStore } from './state.js';
 import { defaultModelSelection, type ModelOption, type ModelSelection, type ModelSettingsView } from '../shared/model-settings.js';
 import { modelSelectionSchema } from './model-settings-schema.js';
 import { createCodexLearningProvider } from './codex-learning-provider.js';
+import { createClaudeLearningProvider } from './claude-learning-provider.js';
 import { createLearningProvider, LearningProviderError, type LearningAgentProvider } from './learning-provider.js';
 import { learningTools } from './learning-service.js';
 import { workspaceTools } from './personalization-tools.js';
@@ -68,16 +69,20 @@ export interface ModelRuntime {
 
 export function createModelRuntime(store: StateStore, dbPath: string, env: NodeJS.ProcessEnv = process.env): ModelRuntime {
   const mainConnection = env.ARI_MAIN_PROVIDER || 'codex', tutorConnection = env.ARI_AI_PROVIDER || 'codex';
-  if (![mainConnection, tutorConnection].every(p => p === 'codex' || p === 'openai'))
-    throw new Error('Ari providers must be codex or openai.');
+  if (![mainConnection, tutorConnection].every(p => p === 'codex' || p === 'openai' || p === 'claude'))
+    throw new Error('Ari providers must be codex, openai, or claude.');
+  const defaultModel = mainConnection === 'claude' ? env.CLAUDE_MAIN_MODEL
+    : mainConnection === 'codex' ? env.CODEX_MAIN_MODEL || env.CODEX_TUTOR_MODEL : env.OPENAI_MAIN_MODEL || env.OPENAI_MODEL;
   const defaults = modelSelectionSchema.parse({
-    model: (mainConnection === 'codex' ? env.CODEX_MAIN_MODEL || env.CODEX_TUTOR_MODEL : env.OPENAI_MAIN_MODEL || env.OPENAI_MODEL) || defaultModelSelection.model,
+    model: defaultModel || defaultModelSelection.model,
     reasoningEffort: env.ARI_REASONING_EFFORT || defaultModelSelection.reasoningEffort,
   });
   const runtime = resolve(`${dbPath}.codex`);
   const selection = (): ModelSelection => settings.selection();
-  const make = (connection: string, tools: typeof learningTools): LearningAgentProvider | undefined => connection === 'openai' && !env.OPENAI_API_KEY ? undefined : switchingProvider(selection, selected => {
+  const missingKey = (connection: string) => (connection === 'openai' && !env.OPENAI_API_KEY) || (connection === 'claude' && !env.ANTHROPIC_API_KEY);
+  const make = (connection: string, tools: typeof learningTools): LearningAgentProvider | undefined => missingKey(connection) ? undefined : switchingProvider(selection, selected => {
     if (connection === 'openai') return createLearningProvider(env.OPENAI_API_KEY, undefined, selected)!;
+    if (connection === 'claude') return createClaudeLearningProvider({ apiKey: env.ANTHROPIC_API_KEY, model: selected.model, reasoningEffort: selected.reasoningEffort })!;
     return createCodexLearningProvider({ ...selected, cwd: join(runtime, 'workspace'), stateDir: join(runtime, 'state'), tools });
   });
   const learningProvider = make(mainConnection, learningTools);

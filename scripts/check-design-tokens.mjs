@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
@@ -14,7 +14,7 @@ async function check(directory) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) { await check(path); continue; }
     if (!/\.(css|tsx?)$/.test(entry.name)) continue;
-    const file = relative(root, path), source = await readFile(path, 'utf8');
+    const file = relative(root, path).split(sep).join('/'), source = await readFile(path, 'utf8');
     const report = (offset, message) => failures.push(`${file}:${source.slice(0, offset).split('\n').length}: ${message}`);
     if (entry.name.endsWith('.css')) {
       const css = source.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, ' '));

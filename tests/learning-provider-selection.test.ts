@@ -11,5 +11,5 @@ test('main tutor defaults to ChatGPT subscription and Astra regardless of desk m
 test('API billing requires explicit main-provider selection; invalid settings never fall back', () => {
   assert.deepEqual(mainProviderSettings({ ARI_MAIN_PROVIDER: 'openai', OPENAI_MAIN_MODEL: 'gpt-6-astra' }),
     { provider: 'openai', model: 'gpt-6-astra' });
-  assert.throws(() => mainProviderSettings({ ARI_MAIN_PROVIDER: 'auto' }), /must be codex or openai/);
+  assert.throws(() => mainProviderSettings({ ARI_MAIN_PROVIDER: 'auto' }), /must be codex, openai, or claude/);
 });
